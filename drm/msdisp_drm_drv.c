@@ -154,7 +154,6 @@ static struct drm_driver driver = {
 	.name = DRIVER_NAME,
 	.desc = DRIVER_DESC,
 #if KERNEL_VERSION(6, 14, 0) > LINUX_VERSION_CODE
-	.date = DRIVER_DATE,
 #endif
 	.major = DRIVER_MAJOR,
 	.minor = DRIVER_MINOR,
@@ -177,11 +176,7 @@ static void msdisp_drm_handle_page_flip(struct msdisp_drm_pipeline* pipeline)
 
 static void msidsip_drm_timer_func(struct timer_list* t)
 {
-#if KERNEL_VERSION(6, 16, 0) <= LINUX_VERSION_CODE
-	struct msdisp_drm_device *msdisp = timer_container_of(msdisp, t, vblank_timer);
-#else
-	struct msdisp_drm_device *msdisp = from_timer(msdisp, t, vblank_timer);
-#endif
+struct msdisp_drm_device *msdisp = timer_container_of(msdisp, t, vblank_timer);
 	struct drm_crtc* crtc;
 	int i;
 

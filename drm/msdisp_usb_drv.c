@@ -42,7 +42,7 @@
 #if KERNEL_VERSION(6, 13, 0) <= LINUX_VERSION_CODE
 MODULE_IMPORT_NS("usbdisp_drm");
 #elif KERNEL_VERSION(5, 10, 0) <= LINUX_VERSION_CODE
-MODULE_IMPORT_NS(usbdisp_drm);
+MODULE_IMPORT_NS("usbdisp_drm");
 #endif
 
 #define MOD_VER							"3.1.6"

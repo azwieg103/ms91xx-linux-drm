@@ -817,40 +817,48 @@ int usb_hal_add_custom_mode(struct usb_hal* hal, int width, int height, int rate
     return 0;
 }
 
-static void usb_hal_free_buf(struct usb_hal_dev* usb_dev)
+static void usb_hal_free_buf(struct usb_hal_dev *usb_dev)
 {
-    if (!usb_dev->usb_buf.buf) {
-        return;
-    }
+        if (!usb_dev)
+                return;
 
-	switch (usb_dev->usb_buf.type) {
-		case USB_HAL_BUF_TYPE_USB:
-			usb_free_coherent(usb_dev->udev, usb_dev->usb_buf.size, usb_dev->usb_buf.buf, usb_dev->usb_buf.dma_addr);
+        if (usb_dev->usb_buf.buf) {
+                switch (usb_dev->usb_buf.type) {
+                case USB_HAL_BUF_TYPE_USB:
+                        usb_free_coherent(usb_dev->udev,
+                                          usb_dev->usb_buf.size,
+                                          usb_dev->usb_buf.buf,
+                                          usb_dev->usb_buf.dma_addr);
+                        break;
+                case USB_HAL_BUF_TYPE_VMALLOC:
+                        vfree(usb_dev->usb_buf.buf);
+                        if (usb_dev->usb_buf.sgt) {
+                                sg_free_table(usb_dev->usb_buf.sgt);
+                                kfree(usb_dev->usb_buf.sgt);
+                        }
+                        break;
+                default:
+                        break;
+                }
+        }
 
-            if (usb_dev->cursor_buf.buf)  vfree(usb_dev->cursor_buf.buf);
-            if (usb_dev->old_cursor_buf.buf)  vfree(usb_dev->old_cursor_buf.buf);
-            if (usb_dev->desktop_buf.buf)  vfree(usb_dev->desktop_buf.buf);
-            if (usb_dev->image_buf.buf)  vfree(usb_dev->image_buf.buf);
-			break;
-		case USB_HAL_BUF_TYPE_VMALLOC:
-			sg_free_table(usb_dev->usb_buf.sgt);
-			kfree(usb_dev->usb_buf.sgt);
-			vfree(usb_dev->usb_buf.buf);
-			usb_dev->usb_buf.sgt = NULL;
+        if (usb_dev->cursor_buf.buf)
+                vfree(usb_dev->cursor_buf.buf);
+        if (usb_dev->old_cursor_buf.buf)
+                vfree(usb_dev->old_cursor_buf.buf);
+        if (usb_dev->desktop_buf.buf)
+                vfree(usb_dev->desktop_buf.buf);
+        if (usb_dev->image_buf.buf)
+                vfree(usb_dev->image_buf.buf);
 
-            if (usb_dev->cursor_buf.buf)  vfree(usb_dev->cursor_buf.buf);
-            if (usb_dev->old_cursor_buf.buf)  vfree(usb_dev->old_cursor_buf.buf);
-            if (usb_dev->desktop_buf.buf)  vfree(usb_dev->desktop_buf.buf);
-            if (usb_dev->image_buf.buf)  vfree(usb_dev->image_buf.buf);
-			break;
-		default:
-			break;
-	}
-	usb_dev->usb_buf.buf = NULL;
-    usb_dev->desktop_buf.buf = NULL;
-   	usb_dev->cursor_buf.buf = NULL;
-    usb_dev->old_cursor_buf.buf = NULL;
-    usb_dev->image_buf.buf = NULL;
+        usb_dev->usb_buf.buf = NULL;
+        usb_dev->usb_buf.sgt = NULL;
+        usb_dev->usb_buf.size = 0;
+        usb_dev->usb_buf.len = 0;
+        usb_dev->cursor_buf.buf = NULL;
+        usb_dev->old_cursor_buf.buf = NULL;
+        usb_dev->desktop_buf.buf = NULL;
+        usb_dev->image_buf.buf = NULL;
 }
 
 static int usb_dev_vmalloc_image(struct usb_hal_dev* usb_dev)
@@ -995,6 +1003,8 @@ static int usb_dev_alloc_buf(struct usb_hal_dev* usb_dev)
 	int ret = 0;
 
     ret = usb_dev_vmalloc_image(usb_dev);
+        if (ret)
+                return ret;
 
 	usb_dev->usb_buf.size = USB_HAL_BUF_SIZE;
 	usb_dev->usb_buf.len = USB_HAL_BUF_DEF_LEN;
@@ -1191,11 +1201,21 @@ struct usb_hal* usb_hal_init(struct usb_interface *interface, const struct usb_d
 	snprintf(name, 32, "msdisp%d_send", index);
 	usb_dev->thread_run_flag = 1;
 	usb_dev->thread = kthread_run(usb_hal_state_machine_entry, usb_hal, name);
+        if (IS_ERR(usb_dev->thread)) {
+                ret = PTR_ERR(usb_dev->thread);
+                usb_dev->thread = NULL;
+                usb_dev->thread_run_flag = 0;
+                dev_err(&udev->dev, "failed to start USB worker: %d\\n", ret);
+                goto err;
+        }
 
 	usb_hal_sysfs_init(interface);
     goto out;
 
 err:
+    if (usb_dev)
+        usb_hal_free_buf(usb_dev);
+
     if (usb_dev && usb_dev->dma_dev) {
 		put_device(usb_dev->dma_dev);
     }
@@ -1223,7 +1243,7 @@ void usb_hal_destroy(struct usb_hal* hal)
 
     if (usb_dev->thread) {
         usb_hal_stop_thread(usb_dev);
-        msleep(300);
+        kthread_stop(usb_dev->thread);
         usb_dev->thread = NULL;
     }
 

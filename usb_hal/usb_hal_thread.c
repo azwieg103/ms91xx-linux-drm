@@ -709,7 +709,8 @@ int usb_hal_state_machine_entry(void* data)
 
     ep = usb_dev->hal_dev->funcs->get_transfer_bulk_ep();
 	/* wait for drm enable */
-    while(usb_dev->thread_run_flag) {
+    while (READ_ONCE(usb_dev->thread_run_flag) &&
+           !kthread_should_stop()) {
         usb_hal_state_machine(usb_dev, data_urb, zero_msg, ep, fifo);		
 		counter++;
     }
@@ -722,6 +723,6 @@ int usb_hal_state_machine_entry(void* data)
 
 void usb_hal_stop_thread(struct usb_hal_dev *usb_dev)
 {
-    usb_dev->thread_run_flag = 0;
+    WRITE_ONCE(usb_dev->thread_run_flag, 0);
     wake_up_interruptible(&usb_dev->wait_queue);
 }
