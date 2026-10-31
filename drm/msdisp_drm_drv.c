@@ -162,10 +162,15 @@ static struct drm_driver driver = {
 
 static void msdisp_drm_handle_page_flip(struct msdisp_drm_pipeline* pipeline)
 {
-	struct drm_crtc* crtc = pipeline->crtc;
-	struct drm_device* dev = crtc->dev;
+	struct drm_crtc* crtc;
+	struct drm_device* dev;
 	unsigned long flags;
 
+	if (!pipeline || !pipeline->crtc)
+		return;
+
+	crtc = pipeline->crtc;
+	dev = crtc->dev;
 	spin_lock_irqsave(&dev->event_lock, flags);
 	if (pipeline->event) {
 		drm_crtc_send_vblank_event(crtc, pipeline->event);
@@ -181,12 +186,17 @@ struct msdisp_drm_device *msdisp = timer_container_of(msdisp, t, vblank_timer);
 	int i;
 
 	for (i = 0; i < msdisp->pipeline_cnt; i++) {
-		crtc = msdisp->pipeline[i].crtc;
+		crtc = READ_ONCE(msdisp->pipeline[i].crtc);
+		if (!crtc)
+			continue;
+
 		drm_crtc_handle_vblank(crtc);
 		msdisp_drm_handle_page_flip(&msdisp->pipeline[i]);
 	}
 
-	mod_timer(&msdisp->vblank_timer, jiffies + msecs_to_jiffies(msdisp_drm_vblank_timer_ms));
+	mod_timer(&msdisp->vblank_timer,
+		  jiffies + msecs_to_jiffies(max_t(unsigned short, 1,
+						   READ_ONCE(msdisp_drm_vblank_timer_ms))));
 }
 
 static int msdisp_drm_init(struct msdisp_drm_device *msdisp)
@@ -200,10 +210,6 @@ static int msdisp_drm_init(struct msdisp_drm_device *msdisp)
 		mutex_init(&msdisp->pipeline[i].hal_lock);
 	}
 
-	timer_setup(&msdisp->vblank_timer, msidsip_drm_timer_func, 0);
-	msdisp->vblank_timer.expires = (jiffies + msecs_to_jiffies(msdisp_drm_vblank_timer_ms));
-	add_timer(&msdisp->vblank_timer);
- 
 	ret = msdisp_drm_modeset_init(dev);
 	if (ret) {
 		goto err;
@@ -225,6 +231,13 @@ static int msdisp_drm_init(struct msdisp_drm_device *msdisp)
 		goto err;
 
 	drm_kms_helper_poll_init(dev);
+
+	/* Start only after all CRTCs and vblank state are initialized. */
+	timer_setup(&msdisp->vblank_timer, msidsip_drm_timer_func, 0);
+	mod_timer(&msdisp->vblank_timer,
+		  jiffies + msecs_to_jiffies(max_t(unsigned short, 1,
+						   msdisp_drm_vblank_timer_ms)));
+	return 0;
 
 err:
 	return ret;
@@ -287,16 +300,18 @@ struct drm_device *msdisp_drm_device_create(struct device *parent)
 	struct drm_device *drm = NULL;
 	int ret, i, alloc_fifo_cnt = 0;
 
-	if (msdisp_drm_initial_pipeline_count > MSDISP_DRM_MAX_PIPELINE_CNT) {
+	if (!msdisp_drm_initial_pipeline_count ||
+	    msdisp_drm_initial_pipeline_count > MSDISP_DRM_MAX_PIPELINE_CNT) {
 		printk("%s: Max pipeline is :%d module param is:%d\n", __func__, MSDISP_DRM_MAX_PIPELINE_CNT, msdisp_drm_initial_pipeline_count);
 		return NULL;
 	}
 
 	msdisp_drm = devm_drm_dev_alloc(parent, &driver, struct msdisp_drm_device, drm);
 
-    if(NULL == msdisp_drm) {
-        dev_err(parent, "alloc msdisp drm device failed!\n");
-        return NULL;
+    if (IS_ERR_OR_NULL(msdisp_drm)) {
+        ret = msdisp_drm ? PTR_ERR(msdisp_drm) : -ENOMEM;
+        dev_err(parent, "alloc msdisp drm device failed: %d\n", ret);
+        return ERR_PTR(ret);
     }
 
     drm = &msdisp_drm->drm;
@@ -310,7 +325,7 @@ struct drm_device *msdisp_drm_device_create(struct device *parent)
 			ret = -ENOMEM;
 			goto err_free;
 		}
-		alloc_fifo_cnt = i;
+		alloc_fifo_cnt++;
 	}
 	
 	ret = msdisp_drm_init(msdisp_drm);
@@ -350,17 +365,14 @@ int msdisp_drm_device_remove(struct drm_device *drm)
 	int i;
 	struct msdisp_drm_device* msdisp_drm = to_msdisp_drm(drm);
 
-	for (i = 0; i < msdisp_drm->pipeline_cnt; i++) {
-		(void)kfifo_free(&msdisp_drm->pipeline[i].fifo);
-	}
-
-#if KERNEL_VERSION(6, 2, 0) <= LINUX_VERSION_CODE
-	timer_delete(&msdisp_drm->vblank_timer);
-#else
-	del_timer(&msdisp_drm->vblank_timer);
-#endif
+	/* The callback rearms itself; wait for it to finish before teardown. */
+	del_timer_sync(&msdisp_drm->vblank_timer);
+	drm_kms_helper_poll_fini(drm);
 	msdisp_drm_sysfs_exit(msdisp_drm);
 	drm_dev_unplug(drm);
+
+	for (i = 0; i < msdisp_drm->pipeline_cnt; i++)
+		(void)kfifo_free(&msdisp_drm->pipeline[i].fifo);
 
 	return 0;
 }
