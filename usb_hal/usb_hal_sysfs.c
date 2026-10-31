@@ -77,9 +77,9 @@ static ssize_t usb_hal_frame_show(struct device* dev, struct device_attribute* a
 
 static ssize_t usb_hal_dev_show(struct device* dev, struct device_attribute* attr, char* buf)
 {
-    struct usb_hal* usb_hal = usb_intf_device_to_hal_func(dev);
-    if (!usb_hal || !usb_hal->private)
-        return -ENODEV;
+	struct usb_hal* usb_hal = usb_intf_device_to_hal_func(dev);
+	if (!usb_hal || !usb_hal->private)
+		return -ENODEV;
 	struct usb_hal_dev* usb_dev = usb_hal->private;
 	char tmp[96];
 
