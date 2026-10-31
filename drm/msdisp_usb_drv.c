@@ -177,7 +177,7 @@ static int msdisp_usb_reset_resume(struct usb_interface *interface)
 struct usb_hal* usb_intf_device_to_hal_func(struct device* dev)
 {
 	struct msdisp_usb_device* usb_dev = dev_get_drvdata(dev);
-	return usb_dev->hal;
+	return usb_dev ? usb_dev->hal : NULL;
 }
 
 static int msdisp_usb_probe(struct usb_interface *interface,
