@@ -41,7 +41,7 @@
 #include "hal_adaptor.h"
 #include "usb_device_hid.h"
 
-void usb_hal_sysfs_init(struct usb_interface *interface);
+int usb_hal_sysfs_init(struct usb_interface *interface);
 void usb_hal_sysfs_exit(struct usb_interface *interface);
 
 static int port_type_override = -1;
@@ -1210,7 +1210,14 @@ struct usb_hal* usb_hal_init(struct usb_interface *interface, const struct usb_d
                 goto err;
         }
 
-	usb_hal_sysfs_init(interface);
+	ret = usb_hal_sysfs_init(interface);
+	if (ret) {
+		usb_hal_stop_thread(usb_dev);
+		kthread_stop(usb_dev->thread);
+		usb_dev->thread = NULL;
+		goto err;
+	}
+
     goto out;
 
 err:
