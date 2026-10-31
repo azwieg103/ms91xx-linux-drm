@@ -302,8 +302,10 @@ struct drm_device *msdisp_drm_device_create(struct device *parent)
 
 	if (!msdisp_drm_initial_pipeline_count ||
 	    msdisp_drm_initial_pipeline_count > MSDISP_DRM_MAX_PIPELINE_CNT) {
-		printk("%s: Max pipeline is :%d module param is:%d\n", __func__, MSDISP_DRM_MAX_PIPELINE_CNT, msdisp_drm_initial_pipeline_count);
-		return NULL;
+		printk("%s: pipeline count must be between 1 and %d (got %d)\n",
+		       __func__, MSDISP_DRM_MAX_PIPELINE_CNT,
+		       msdisp_drm_initial_pipeline_count);
+		return ERR_PTR(-EINVAL);
 	}
 
 	msdisp_drm = devm_drm_dev_alloc(parent, &driver, struct msdisp_drm_device, drm);
@@ -335,7 +337,7 @@ struct drm_device *msdisp_drm_device_create(struct device *parent)
 
 	ret = drm_dev_register(drm, 0);
 	if (ret)
-		goto err_free;
+		goto err_timer;
 
 	/* Vendor driver never registered a generic fbdev/fbcon client, so
 	 * nothing ever created /dev/fb0 or bound the text console to this
@@ -352,6 +354,11 @@ struct drm_device *msdisp_drm_device_create(struct device *parent)
 
 	msdisp_drm_sysfs_init(msdisp_drm);
 	return drm;
+
+err_timer:
+	/* msdisp_drm_init() has started the self-rearming timer. */
+	del_timer_sync(&msdisp_drm->vblank_timer);
+	drm_kms_helper_poll_fini(drm);
 
 err_free:
 	for (i = 0; i < alloc_fifo_cnt; i++) {
