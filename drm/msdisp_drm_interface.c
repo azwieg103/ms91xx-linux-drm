@@ -46,10 +46,13 @@ static int has_free_pipeline(struct msdisp_drm_device* msdisp_drm)
     int ret = 0;
 
     for (i = 0; i < msdisp_drm->pipeline_cnt; i++) {
-        if (!msdisp_drm->pipeline[i].reg_flag) {
+        struct msdisp_drm_pipeline *pipeline = &msdisp_drm->pipeline[i];
+        mutex_lock(&pipeline->hal_lock);
+        if (!pipeline->reg_flag)
             ret = 1;
+        mutex_unlock(&pipeline->hal_lock);
+        if (ret)
             break;
-        }
     } 
 
     return ret;
@@ -113,13 +116,20 @@ int msdisp_drm_get_free_pipeline_index(struct drm_device* drm)
 {
     int i;
     int index = -1;
-    struct msdisp_drm_device* msdisp_drm = to_msdisp_drm(drm);
+    struct msdisp_drm_device* msdisp_drm;
+
+    if (!drm)
+        return -EINVAL;
+    msdisp_drm = to_msdisp_drm(drm);
 
     for (i = 0; i < msdisp_drm->pipeline_cnt; i++) {
-        if (!msdisp_drm->pipeline[i].reg_flag) {
+        struct msdisp_drm_pipeline *pipeline = &msdisp_drm->pipeline[i];
+        mutex_lock(&pipeline->hal_lock);
+        if (!pipeline->reg_flag)
             index = i;
+        mutex_unlock(&pipeline->hal_lock);
+        if (index >= 0)
             break;
-        }
     }
 
     return index;
@@ -133,7 +143,8 @@ int msdisp_drm_get_pipeline_global_id(struct drm_device* drm, int pipeline_index
         return -1;
     }
 
-    if (pipeline_index >= MSDISP_DRM_MAX_PIPELINE_CNT) {
+    if (pipeline_index < 0 ||
+        pipeline_index >= to_msdisp_drm(drm)->pipeline_cnt) {
         return -1;
     }
 
@@ -148,15 +159,14 @@ EXPORT_SYMBOL(msdisp_drm_get_pipeline_global_id);
 
 struct kobject* msdisp_drm_get_pipeline_kobject(struct drm_device* drm, int pipeline_index)
 {
-    struct msdisp_drm_device* msdisp_drm = to_msdisp_drm(drm);
+    struct msdisp_drm_device* msdisp_drm;
 
-    if (!drm ) {
+    if (!drm)
         return NULL;
-    }
+    msdisp_drm = to_msdisp_drm(drm);
 
-    if (pipeline_index >= MSDISP_DRM_MAX_PIPELINE_CNT) {
+    if (pipeline_index < 0 || pipeline_index >= msdisp_drm->pipeline_cnt)
         return NULL;
-    }
 
     return &msdisp_drm->pipeline[pipeline_index].dev.kobj;
 }
@@ -164,44 +174,47 @@ EXPORT_SYMBOL(msdisp_drm_get_pipeline_kobject);
 
 int msdisp_drm_register_usb_hal(struct drm_device* drm, int pipeline_index, struct msdisp_usb_hal* usb_hal)
 {
-    struct msdisp_drm_device* msdisp_drm = to_msdisp_drm(drm);
+    struct msdisp_drm_device* msdisp_drm;
     struct msdisp_drm_pipeline* pipeline;
-    int ret;
+    int ret = 0;
 
-    if (!drm || !usb_hal) {
+    if (!drm || !usb_hal || !usb_hal->funcs || !usb_hal->funcs->enable)
         return -EINVAL;
-    }
-
-    if (pipeline_index >= MSDISP_DRM_MAX_PIPELINE_CNT) {
+    msdisp_drm = to_msdisp_drm(drm);
+    if (pipeline_index < 0 || pipeline_index >= msdisp_drm->pipeline_cnt)
         return -EINVAL;
-    }
 
     pipeline = &msdisp_drm->pipeline[pipeline_index];
+    mutex_lock(&pipeline->hal_lock);
     if (pipeline->reg_flag) {
+        mutex_unlock(&pipeline->hal_lock);
         return -EBUSY;
     }
-    mutex_lock(&pipeline->hal_lock);
     pipeline->usb_hal = usb_hal;
-    mutex_unlock(&pipeline->hal_lock);
-    if (MSDISP_DRM_STATUS_ENABLE == pipeline->drm_status) {
-        ret = usb_hal->funcs->enable(usb_hal, pipeline->drm_width, pipeline->drm_height, pipeline->drm_rate, pipeline->drm_fb_format);
+    if (MSDISP_DRM_STATUS_ENABLE == pipeline->drm_status)
+        ret = usb_hal->funcs->enable(usb_hal, pipeline->drm_width,
+                         pipeline->drm_height, pipeline->drm_rate,
+                         pipeline->drm_fb_format);
+    if (ret) {
+        pipeline->usb_hal = NULL;
+        mutex_unlock(&pipeline->hal_lock);
+        return ret;
     }
     pipeline->reg_flag = 1;
+    mutex_unlock(&pipeline->hal_lock);
     return 0;
 }
 EXPORT_SYMBOL(msdisp_drm_register_usb_hal);
 
 int msdisp_drm_unregister_usb_hal(struct drm_device* drm, int pipeline_index)
 {
-    struct msdisp_drm_device* msdisp_drm = to_msdisp_drm(drm);
+    struct msdisp_drm_device* msdisp_drm;
     struct msdisp_drm_pipeline* pipeline;
-    if (!drm) {
+    if (!drm)
         return -EINVAL;
-    }
-
-    if (pipeline_index >= MSDISP_DRM_MAX_PIPELINE_CNT) {
+    msdisp_drm = to_msdisp_drm(drm);
+    if (pipeline_index < 0 || pipeline_index >= msdisp_drm->pipeline_cnt)
         return -EINVAL;
-    }
 
     pipeline = &msdisp_drm->pipeline[pipeline_index];
     mutex_lock(&pipeline->hal_lock);
@@ -214,15 +227,13 @@ EXPORT_SYMBOL(msdisp_drm_unregister_usb_hal);
 
 struct kfifo* msdisp_drm_get_kfifo(struct drm_device* drm, int pipeline_index)
 {
-    struct msdisp_drm_device* msdisp_drm = to_msdisp_drm(drm);
+    struct msdisp_drm_device* msdisp_drm;
 
-    if (!drm) {
+    if (!drm)
         return NULL;
-    }
-
-    if (pipeline_index >= MSDISP_DRM_MAX_PIPELINE_CNT) {
+    msdisp_drm = to_msdisp_drm(drm);
+    if (pipeline_index < 0 || pipeline_index >= msdisp_drm->pipeline_cnt)
         return NULL;
-    }
 
     return &msdisp_drm->pipeline[pipeline_index].fifo;
 }
