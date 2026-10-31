@@ -17,8 +17,8 @@
 #include <linux/dma-mapping.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-#if KERNEL_VERSION(5, 9, 0) <= LINUX_VERSION_CODE || defined(EL8)
-#include <linux/iommu.h>
+#if KERNEL_VERSION(5, 9, 0) > LINUX_VERSION_CODE && defined(CONFIG_INTEL_IOMMU)
+#include <linux/intel-iommu.h>
 #endif
 
 #include "msdisp_plat_drv.h"
@@ -53,22 +53,15 @@ int msdisp_platform_device_probe(struct platform_device *pdev)
 {
 	struct drm_device *dev;
 
-#if KERNEL_VERSION(5, 9, 0) <= LINUX_VERSION_CODE || defined(EL8)
-#if IS_ENABLED(CONFIG_IOMMU_API) && defined(CONFIG_INTEL_IOMMU)
-	struct dev_iommu iommu;
-#endif
-#endif
-
-/* Intel-IOMMU workaround: platform-bus unsupported, force ID-mapping */
-#if IS_ENABLED(CONFIG_IOMMU_API) && defined(CONFIG_INTEL_IOMMU)
-#if KERNEL_VERSION(5, 9, 0) <= LINUX_VERSION_CODE || defined(EL8)
-	memset(&iommu, 0, sizeof(iommu));
-	iommu.priv = (void *)-1;
-	pdev->dev.iommu = &iommu;
-#else
+	/*
+	 * Older kernels used archdata.iommu for the Intel IOMMU dummy-domain
+	 * workaround.  On newer kernels, dev->iommu is kernel-managed
+	 * (allocated and freed by the IOMMU core); never replace it with
+	 * driver-owned or stack storage.
+	 */
+#if KERNEL_VERSION(5, 9, 0) > LINUX_VERSION_CODE && defined(CONFIG_INTEL_IOMMU)
 #define INTEL_IOMMU_DUMMY_DOMAIN                ((void *)-1)
 	pdev->dev.archdata.iommu = INTEL_IOMMU_DUMMY_DOMAIN;
-#endif
 #endif
 
 	dev = msdisp_drm_device_create(&pdev->dev);
