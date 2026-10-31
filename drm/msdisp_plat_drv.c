@@ -48,7 +48,7 @@ static struct msdisp_platform_drv_context {
 
 struct platform_device* msdisp_platform_get_device(int id)
 {
-	if (id >= MSDISP_DEVICE_COUNT_MAX) {
+	if (id < 0 || id >= MSDISP_DEVICE_COUNT_MAX) {
 		printk("msdisp: id is invalid\n");
 		return NULL;
 	}
@@ -138,6 +138,9 @@ static struct platform_device *msdisp_platform_drv_create_new_device(struct msdi
 	}
 
 	pdev = msdisp_platform_dev_create(&pdevinfo);
+	if (IS_ERR_OR_NULL(pdev))
+		return pdev ? pdev : ERR_PTR(-ENOMEM);
+
 	ctx->devices[pdevinfo.id] = pdev;
 	ctx->dev_count++;
 
@@ -149,6 +152,9 @@ int msdisp_platform_device_add(struct device *device)
 	struct msdisp_platform_drv_context *ctx =
 		(struct msdisp_platform_drv_context *)dev_get_drvdata(device);
 	struct platform_device *pdev = NULL;
+
+	if (!ctx)
+		return -ENODEV;
 
 	msdisp_platform_drv_context_lock(ctx);
 
@@ -176,8 +182,12 @@ int msdisp_platform_add_devices(struct device *device, unsigned int val)
 	}
 
 	dev_info(device, "Increasing device count to %u\n", dev_count + val);
-	while (val-- && msdisp_platform_device_add(device) == 0)
-		;
+	while (val--) {
+		int ret = msdisp_platform_device_add(device);
+
+		if (ret)
+			return ret;
+	}
 	return 0;
 }
 
