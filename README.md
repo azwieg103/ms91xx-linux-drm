@@ -157,3 +157,67 @@ When reporting an issue, include the adapter USB ID, distribution release, kerne
 ## License and provenance
 
 See [LICENSE](LICENSE) for the license terms included with the source. Retain applicable copyright and license notices when modifying or redistributing the driver.
+
+## Building RPM and SRPM packages (AlmaLinux 10)
+
+The repository includes an RPM spec for building a **kernel-specific** binary RPM and SRPM. The package contains both kernel modules and a systemd modules-load configuration that loads usbdisp_drm before usbdisp_usb during boot.
+
+This is intentionally not a kABI/weak-updates package. Build a new RPM for each kernel release you intend to boot.
+
+Install the packaging tools and matching kernel development package:
+
+```bash
+sudo dnf install -y rpm-build rpmdevtools gcc make elfutils-libelf-devel kernel-devel
+```
+
+From a clean checkout, create the source tarball and RPM build directories:
+
+```bash
+VERSION=3.1.6
+KVER="$(uname -r)"
+TOP="$HOME/rpmbuild"
+mkdir -p "$TOP"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+git archive --format=tar.gz --prefix="ms91xx-linux-drm-$VERSION/" HEAD \
+  -o "$TOP/SOURCES/ms91xx-linux-drm-$VERSION.tar.gz"
+cp packaging/rpm/ms91xx-linux-drm.spec "$TOP/SPECS/"
+```
+
+Build both the binary RPM and SRPM:
+
+```bash
+rpmbuild -ba "$TOP/SPECS/ms91xx-linux-drm.spec" --define "kver $KVER"
+```
+
+Outputs are written under ~/rpmbuild/RPMS/x86_64/ and ~/rpmbuild/SRPMS/.
+
+The build requires the exact kernel development package for the selected kernel. Confirm it is available before building:
+
+```bash
+rpm -q "kernel-devel-uname-r = $(uname -r)"
+```
+
+Install the resulting kernel-specific RPM:
+
+```bash
+sudo dnf install "$HOME"/rpmbuild/RPMS/x86_64/ms91xx-linux-drm-*.rpm
+```
+
+The RPM installs the modules under /lib/modules/KVER/extra/ms91xx/, runs depmod, and installs /usr/lib/modules-load.d/msdisp.conf with the module names in load order. The driver modules will therefore be loaded at boot, including when the USB adapter is not yet connected; the USB driver will bind when the adapter appears.
+
+**Before installing:** remove the earlier manual blacklist if it is still present:
+
+```bash
+sudo rm -f /etc/modprobe.d/blacklist-msdisp.conf
+```
+
+Do not install the RPM while the old blacklist remains, because it would prevent the modules from loading. The RPM does not silently delete administrator-created blacklist files.
+
+After installation, verify module discovery and boot configuration:
+
+```bash
+modinfo -n usbdisp_drm
+modinfo -n usbdisp_usb
+cat /usr/lib/modules-load.d/msdisp.conf
+```
+
+A reboot is the recommended first startup test. Keep a recovery path available: the driver is still experimental, and suspend/resume, repeated unplug/replug, and long-duration operation have not yet been fully validated.
