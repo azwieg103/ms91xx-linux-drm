@@ -135,6 +135,9 @@ static int msdisp_usb_suspend(struct usb_interface *interface,
     struct msdisp_usb_device* usb_dev = usb_get_intfdata(interface);
 	int ret;
 
+	if (!usb_dev || !usb_dev->drm)
+		return -ENODEV;
+
 	ret = drm_mode_config_helper_suspend(usb_dev->drm);
 	dev_info(&usb_dev->udev->dev, "suspend! ret=%d\n", ret);
     return ret;
@@ -144,6 +147,9 @@ static int msdisp_usb_resume(struct usb_interface *interface)
 {
     struct msdisp_usb_device* usb_dev = usb_get_intfdata(interface);
 	int ret;
+
+	if (!usb_dev || !usb_dev->drm)
+		return -ENODEV;
 
 	ret = drm_mode_config_helper_resume(usb_dev->drm);
 
@@ -156,13 +162,14 @@ static int msdisp_usb_reset_resume(struct usb_interface *interface)
     struct msdisp_usb_device* usb_dev = usb_get_intfdata(interface);
 	int ret;
 	
-	if (usb_dev && usb_dev->hal) {
+	if (!usb_dev || !usb_dev->drm)
+		return -ENODEV;
+
+	if (usb_dev->hal)
 		usb_hal_resume_gpio(usb_dev->hal);
-	}
+
 	ret = drm_mode_config_helper_resume(usb_dev->drm);
-	if (usb_dev && usb_dev->drm) {
-		drm_kms_helper_hotplug_event(usb_dev->drm);
-	}
+	drm_kms_helper_hotplug_event(usb_dev->drm);
 	dev_info(&usb_dev->udev->dev, "reset resume!ret =%d\n", ret);
 	return ret;
 }
@@ -265,7 +272,9 @@ static int msdisp_usb_probe(struct usb_interface *interface,
 fail:
 	if (usb_dev->hal) {
 		usb_hal_destroy(usb_dev->hal);
+		usb_dev->hal = NULL;
 	}
+	usb_set_intfdata(interface, NULL);
 
     return ret;
 }
@@ -274,9 +283,18 @@ static void msdisp_usb_disconnect(struct usb_interface *interface)
 {
 	struct msdisp_usb_device* usb_dev = usb_get_intfdata(interface);
 	struct kobject* obj;
-    
-    (void)msdisp_drm_unregister_usb_hal(usb_dev->drm, usb_dev->pipeline_index);
-	usb_hal_destroy(usb_dev->hal);
+
+	if (!usb_dev)
+		return;
+
+	usb_set_intfdata(interface, NULL);
+
+	if (usb_dev->drm)
+		(void)msdisp_drm_unregister_usb_hal(usb_dev->drm, usb_dev->pipeline_index);
+	if (usb_dev->hal) {
+		usb_hal_destroy(usb_dev->hal);
+		usb_dev->hal = NULL;
+	}
 	obj = msdisp_drm_get_pipeline_kobject(usb_dev->drm, usb_dev->pipeline_index);
 	if (obj) {
 		sysfs_remove_link(obj, "usb_dev");
