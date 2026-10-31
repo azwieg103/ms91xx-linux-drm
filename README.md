@@ -1,171 +1,158 @@
-# MacroSilicon MS91xx Linux DRM driver (modern-kernel fork)
+# MacroSilicon MS9133 USB Display Driver for Linux
 
-Linux DRM driver for **MacroSilicon MS9132 / MS9133 / MS9135** USB display chips
-(`lsusb`: **`345f:9132` / `345f:9133` "MS USB Video"**), based on MacroSilicon's
-**official GPL-2.0 source code**, fixed to build and run on **modern kernels
-(6.8 → 7.0+)** and packaged for **DKMS**.
+This repository contains a Linux **USB display driver** for the **MacroSilicon MS9133** USB display controller.
 
-These chips power countless **brandless "lightweight" portable USB monitors** and
-**Chinese dual-screen / tri-screen laptop extenders** sold on AliExpress, Temu,
-Amazon, etc., as well as generic **USB 3.0 → HDMI/VGA adapters**.
-
-> ✅ Tested working on **Ubuntu 24.04 (Noble)** and **Ubuntu 26.04 (Resolute)**, **kernels 6.8 → 7.0+**, **GNOME Wayland (46/47)** and **KDE Plasma (Wayland)** with brandless dual-screen laptop monitors (MS9132 single/dual mode, 1920×1080@60, USB 3 SuperSpeed) — both **mirror** and **extend** modes.
-
-## Is this my device?
-
-```
-$ lsusb | grep 345f
-Bus 004 Device 003: ID 345f:9132 MS           USB Video
-```
-
-If you see `345f:9132`, `345f:9133` or `345f:9135`, yes.
-
-If you see **`534d:6021`** ("MacroSilicon USB Video" / "VGA Display Adapter"),
-also yes — that is the functional identity these dongles mode-switch to on their
-own after enumerating as `345f:9132`. USB→**VGA** adapters in that family are
-usually **MS912C** chips (`dmesg` reports `chip id:0x3`) and need two extra
-module options to produce any picture at all; see
-**[docs/MS912C-VGA.md](docs/MS912C-VGA.md)**.
-
-Typical symptoms before installing this driver:
-
-- The monitor only shows a **red/standby LED** on Linux (works fine on Windows).
-- The device **re-enumerates every ~10 seconds** (`dmesg` shows connect/disconnect
-  loops) because no driver claims its video interface.
-- With the reverse-engineered `ms912x` driver, the panel **flickers and then shows
-  "No Signal"** (see [rhgndf/ms912x#42](https://github.com/rhgndf/ms912x/issues/42)),
-  or shows corrupted/magenta images. This driver fixes that: the official enable
-  sequence keeps the video output muted until the first frame has been transferred,
-  which the dual-screen (MS9133-family) firmware requires.
-
-## Install (DKMS, recommended)
-
-### Quick install (recommended)
-
-```sh
-git clone https://github.com/bambinounos/ms91xx-linux-drm.git
-cd ms91xx-linux-drm
-sudo ./dkms-install.sh
-```
-
-Or manually:
-
-```sh
-sudo rsync -a --delete --exclude .git ./ /usr/src/msdisp-3.1.6/
-sudo dkms add msdisp/3.1.6
-sudo dkms install msdisp/3.1.6
-sudo update-initramfs -u -k "$(uname -r)"   # or: sudo dracut -f
-```
-
-Plug the screen in (or unplug/replug it — if upgrading from an older loaded
-driver, **reboot** so the kernel releases the old `usbdisp_drm` module). The
-`usbdisp_usb` module auto-loads via the USB modalias, a new DRM card appears, and
-your desktop (tested on GNOME Wayland/Mutter) lights the panel up like any other
-monitor. DKMS rebuilds the modules automatically on every kernel update.
-
-### Manual build (without DKMS)
-
-```sh
-make                          # builds against the running kernel
-sudo insmod drm/usbdisp_drm.ko
-sudo insmod drm/usbdisp_usb.ko
-```
-
-> ⚠️ The tree must live in a **path without spaces**. kbuild copies `M=` into
-> `KBUILD_EXTMOD` and rejects it with `$(if $(word 2,$(KBUILD_EXTMOD)),...)`,
-> which splits the path on whitespace *inside make* — after the shell already
-> passed it as a single argument — and aborts with the misleading
-> `building multiple external modules is not supported`. No amount of quoting in
-> the recipe avoids it, and a space-free symlink does not help either: make
-> resolves `CURDIR` to the physical path. `drm/Makefile` now fails early with a
-> message that names the real cause. **DKMS is unaffected** — it builds in
-> `/usr/src/msdisp-3.1.6`.
-
-## What this fork fixes (vs. official V3.0.3.13)
-
-MacroSilicon's last public release targets kernels up to ~6.6. On newer kernels it
-does not compile — and even when it compiles, on **6.12+ the DRM node cannot be
-opened at all** (every `open()` of `/dev/dri/cardN` fails with `EINVAL`), so
-compositors silently ignore the device. All fixes are guarded with
-`LINUX_VERSION_CODE`, preserving compatibility with old kernels:
-
-| Fix | Affected kernels |
+| Item | Details |
 |---|---|
-| `.fop_flags = FOP_UNSIGNED_OFFSET` in fops — **without this, `drm_open_helper()` rejects every open and the GPU is unusable** | ≥ 6.12 |
-| `platform_driver.remove` returns `void` | ≥ 6.11 |
-| `drm_helper_mode_fill_fb_struct()` / `fb_create` take `const struct drm_format_info *` | ≥ 6.15 |
-| `drm_do_get_edid()` removed → ported to `drm_edid_read_custom()` (raw EDID copy kept, rest of the flow unchanged) | ≥ 6.13 |
-| `connector->mode_valid()` takes `const struct drm_display_mode *` | ≥ 6.15 |
-| `MODULE_IMPORT_NS("...")` requires a string literal | ≥ 6.13 |
-| `from_timer()` → `timer_container_of()`, `del_timer()` → `timer_delete()` | ≥ 6.16 / 6.2 |
-| `.date` removed from `struct drm_driver`; PRIME fd/handle hooks now core defaults | ≥ 6.14 / 6.6 |
-| `drm_legacy.h` deleted; missing `vmalloc.h` / `scatterlist.h` includes | ≥ 6.8 |
-| `struct_mutex` removed from `drm_device` (GEM locking is internal); explicit `drm_print.h` includes; `DRM_DEBUG_PRIME` → `drm_dbg_prime()` | ≥ 7.0 |
-| Makefiles: removed vestigial `KERNELRELEASE`/`include Kbuild` branch that **broke DKMS builds**; `$(PWD)` → `$(CURDIR)`; added `dkms.conf` | all |
-| `drm_do_get_edid()` and `drm_fb_helper_alloc_info()` / `release_info()` guards lowered to ≥ 6.12 — Debian 13 (`6.12.x+deb13`) and stable `6.12.y` backport the 6.13 EDID and fbdev-helper changes while reporting 6.12 | ≥ 6.12 (Debian 13) |
-| `.fbdev_probe` implemented + GEM `.vmap`/`.vunmap` + `drm_client_setup()` (adapted for `drm_client_buffer_create_dumb()` on 6.18+ and pre-allocated `fb_info` on 6.12+) — provides `/dev/fb0` and text console support | ≥ 6.10 |
-| `534d:6021` added to all three ID lookup tables; `port_type=` override; `custom_mode=` modes honoured with EDID fallback for standard HDMI — see [docs/MS912C-VGA.md](docs/MS912C-VGA.md) | all |
-| Plane atomic update fix: uses `plane->state->fb` instead of `old_state->fb` — resolves 1-frame delayed screen updates (input lag when typing) and black screen on resume | all |
-| Wayland mouse cursor fix: default `hw_cursor=1` enables universal atomic cursor plane with dedicated per-pipe topology `possible_crtcs = (1 << i)` and direct CRTC pipeline routing — ensures cursor is rendered and visible under GNOME Mutter 50.1 Wayland multi-GPU setups where global software overlays are suppressed by the primary GPU; caches cursor bitmaps across async modeset enable and synchronizes cursor drawing under `usb_buf.mutex` | all |
-| `msdisp0_send` State D and polling fix: replaced `down_timeout(&usb_dev->sema, 1)` busy-polling in `TASK_UNINTERRUPTIBLE` with `wait_event_interruptible_timeout` sleeping in `TASK_INTERRUPTIBLE` (State S). Eliminates false "I/O hang" alerts, drops context switches from 1,000/s to ~1/s, removes the artificial +1.0 load average penalty, and adds instant wakeups on cursor movements and frame submissions | all |
-| Wayland multi-monitor freeze fix: sets `crtc_state->no_vblank = true` so `drm_atomic_helper_wait_for_vblanks` does not block synchronously in kernel space; dispatches `drm_crtc_send_vblank_event` immediately in `atomic_flush` once the frame is queued, eliminating the 20ms artificial delay and freeing Mutter's frame clock to render all monitors without stutter or freezing | all |
-| Hotplug uevents: `drm_kms_helper_hotplug_event()` triggered on probe, disconnect, and reset-resume so compositors immediately detect and repaint the display | all |
-| Vblank completion events: delivers pending vblank events on CRTC enable and drains queued events under `event_lock` — fixes dropped frame completions and drops idle compositor CPU from 100% to ~2% | all |
-| Frame transfer reliability: splits bulk frame transfers into 64KB chunks to avoid `-110`/`ETIMEDOUT` stalls on large frames; double-buffer index only advances on successful send to prevent ping-pong desync | all |
-| Teardown memory leak: frees `cursor_buf`, `old_cursor_buf`, `desktop_buf`, and `image_buf` in `USB_HAL_BUF_TYPE_USB` path — saves ~5MB leaked on every disconnect/reload | all |
-| AMD GPU (`amdgpu`) host support: page-array import fallback for dmabuf exporters lacking `.vmap`, CPU cache invalidation via `drm_clflush_pages()`, `dma_buf_vmap_unlocked` on ≥ 6.2, `ARGB8888` and `DRM_FORMAT_MOD_LINEAR` modifier advertisement | all / ≥ 6.2 |
-| Panel mode 1024×600@60 (VIC 150) added to supported modes table | all |
-| Frame copy bounds check (PR #7): `usb_hal_update_frame()` drops frames whose framebuffer is smaller than the active mode instead of copying past its end — fixes a kernel oops (page fault in `memcpy`) that took down the compositor on resolution change | all |
-| Damage rectangle alignment clipping (PR #8): `usb_hal_combine_rects()` clamps aligned `right`/`bottom` coordinates to `mode.width`/`mode.height` — fixes diagonal image corruption and out-of-bounds reads on non-multiple-of-4 widths such as `1366×768` | all |
+| Device / chip | MacroSilicon MS9133 |
+| USB vendor:product ID | `345f:9133` |
+| USB device description | Commonly reported as `MS USB Video` |
+| Linux kernel modules | `usbdisp_drm` and `usbdisp_usb` |
+| Display subsystem | Linux DRM/KMS |
+| Tested operating system | **AlmaLinux 10.2 only** |
 
-The protocol/init logic is **untouched** — it is exactly the manufacturer's code.
+> **Compatibility notice:** This driver has only been tested on AlmaLinux 10.2. Other distributions, AlmaLinux releases, kernel versions, desktop environments, and USB display devices have not been verified. A successful build does not establish that the driver is safe or functional on other systems.
 
-## Known issues (inherited from the vendor code)
+## Overview
 
-- **Do not `rmmod usbdisp_drm`.** The vendor teardown path has a use-after-free
-  that oopses the kernel and leaves the module stuck (refcount -1). To reload the
-  driver, reboot. In normal use the modules simply stay loaded.
-- If the panel shows only the red LED and **never enumerates** (no `dmesg` events
-  at all when plugging), the chip's firmware is latched: disconnect the USB cable
-  *and any other power source* for ~2 minutes, then reconnect.
-- A ~10 s connect/disconnect loop in `dmesg` is normal **only while no driver is
-  bound**; it stops as soon as `usbdisp_usb` claims the device.
+The driver connects a compatible MacroSilicon USB display controller to the Linux Direct Rendering Manager (DRM/KMS) subsystem so that a connected USB display can be exposed to the desktop as an additional display.
 
-## Credits & provenance
+This is a **USB display adapter driver**. It is not a driver for a conventional PCIe graphics card or an integrated GPU.
 
-- **MacroSilicon Technology Co., Ltd.** — original driver, licensed GPL-2.0.
-  Source obtained from their public download server:
-  `http://www.macrosilicon.com:9080/download/USBDisplay/Linux/SourceCode/`
-  (`MS91xx_Linux_Drm_SourceCode_V3.0.3.13.zip`, 2025-07-10 — the pristine zip is
-  kept in this repo for provenance).
-- **[rhgndf/ms912x](https://github.com/rhgndf/ms912x)** and contributors — the
-  reverse-engineering work that kept these devices alive on Linux for years and
-  whose issue tracker pointed the way here.
-- Modern-kernel fixes and DKMS packaging: this fork (debugged live against a real
-  dual-screen MS9132/MS9133 device, including USB protocol captures of the
-  Windows driver).
+The source tree builds two kernel modules:
 
-## License
+- `usbdisp_drm.ko` — DRM/platform portion of the driver.
+- `usbdisp_usb.ko` — USB interface portion of the driver.
 
-GPL-2.0 (same as the original MacroSilicon code). See [LICENSE](LICENSE).
+The source is based on MacroSilicon's Linux driver source and includes changes for building against the tested AlmaLinux 10.2 kernel.
 
----
+## Hardware identification
 
-## Guía rápida en español
+Connect the adapter and inspect USB devices:
 
-Driver Linux para los chips **MacroSilicon MS9132/MS9133** (`lsusb`: `345f:9132`)
-que usan las **pantallas portátiles chinas sin marca** y los **monitores duales
-para laptop** ("dual screen", "lightweight monitor"). Es el código **oficial GPL
-del fabricante**, corregido para kernels modernos (probado en Ubuntu 24.04 con
-kernel 6.17, GNOME Wayland, modos espejo y extendido).
-
-```sh
-git clone https://github.com/bambinounos/ms91xx-linux-drm.git
-cd ms91xx-linux-drm
-sudo ./dkms-install.sh
+```bash
+lsusb -d 345f:9133
 ```
 
-Conecta la pantalla y listo: aparece como un monitor más. Consejos: nunca hagas
-`rmmod usbdisp_drm` (bug del fabricante: para recargar, reinicia); si la pantalla
-queda solo con el LED rojo y no aparece en `lsusb`, desconéctala de todo ~2
-minutos y vuelve a conectarla.
+The device may appear with a description similar to:
+
+```text
+ID 345f:9133 MS USB Video
+```
+
+Confirm the USB ID before assuming that a device is supported. Other products may use different MacroSilicon chips or USB IDs; they are not covered by the MS9133 test result.
+
+## Build environment
+
+The tested environment is:
+
+- AlmaLinux 10.2
+- Kernel: `6.12.0-211.69.1.el10_2.x86_64`
+- x86_64
+
+The build requires a compiler, make, and the kernel development files matching the kernel being built for.
+
+Install the build dependencies on AlmaLinux:
+
+```bash
+sudo dnf install -y gcc make kernel-devel kernel-headers elfutils-libelf-devel
+```
+
+For an out-of-tree module build, the matching kernel development directory must exist:
+
+```bash
+KVER="$(uname -r)"
+test -e "/lib/modules/$KVER/build/Makefile" || {
+    echo "Missing kernel development files for $KVER"
+    exit 1
+}
+```
+
+If the running kernel was recently updated, reboot into that kernel or install the matching `kernel-devel` package before building.
+
+## Build
+
+Clone the repository and build against the running kernel:
+
+```bash
+git clone https://github.com/azwieg103/ms91xx-linux-drm.git
+cd ms91xx-linux-drm
+
+make
+```
+
+To select a specific installed kernel version:
+
+```bash
+make KVER="6.12.0-211.69.1.el10_2.x86_64"
+```
+
+The build should produce:
+
+```text
+drm/usbdisp_drm.ko
+drm/usbdisp_usb.ko
+```
+
+Check the resulting modules:
+
+```bash
+file drm/usbdisp_drm.ko drm/usbdisp_usb.ko
+modinfo drm/usbdisp_drm.ko
+modinfo drm/usbdisp_usb.ko
+```
+
+To remove generated build files:
+
+```bash
+make clean
+```
+
+## DKMS packaging
+
+The repository includes `dkms.conf`, `dkms-install.sh`, and `dkms-remove.sh` for DKMS packaging.
+
+**Do not run the DKMS installation or removal scripts without first reviewing them for your system.** They modify files under `/usr/src` and `/lib/modules`, update the initramfs, and may attempt to unload or load kernel modules. In particular, the install script includes a live module-reload attempt. Module loading and unloading have not been established as safe on all systems.
+
+The presence of DKMS packaging does not mean that installation or automatic loading has been validated on distributions other than the tested AlmaLinux 10.2 environment.
+
+## Installation and runtime caution
+
+Building the modules is separate from loading them into the running kernel. A successful compilation only verifies that the source compiled against the selected kernel headers; it does not verify USB enumeration, display output, disconnect handling, suspend/resume, or system stability.
+
+**Use caution before loading either module.** A kernel driver runs with kernel privileges, and a fault can hang or crash the system. Keep a way to recover the machine and save important work before performing hardware tests. Do not force-unload a module that is in use.
+
+No general installation or runtime procedure is claimed to be safe for all systems at this time. Runtime behavior must be validated on the specific hardware and kernel before relying on this driver.
+
+## Troubleshooting build problems
+
+### Kernel build directory is missing
+
+Check that the development package matches the running kernel:
+
+```bash
+uname -r
+rpm -q "kernel-devel-$(uname -r)"
+ls -ld "/lib/modules/$(uname -r)/build"
+```
+
+### Module version information
+
+Inspect a built module with:
+
+```bash
+modinfo drm/usbdisp_drm.ko
+modinfo drm/usbdisp_usb.ko
+```
+
+The module's `vermagic` should match the target kernel. If it does not, rebuild using the matching kernel development files and `KVER`.
+
+## Project status
+
+This is an experimental, hardware-specific Linux kernel driver project. The current documented test baseline is **AlmaLinux 10.2 with the kernel listed above**. Testing on other systems is not implied.
+
+Issues and contributions are welcome, but please include the exact adapter USB ID, distribution release, kernel version, build output, and relevant kernel log messages when reporting a problem.
+
+## License and provenance
+
+See [LICENSE](LICENSE) for the license terms included with the source. The driver is derived from MacroSilicon's published Linux source; retain the applicable copyright and license notices when modifying or redistributing it.
