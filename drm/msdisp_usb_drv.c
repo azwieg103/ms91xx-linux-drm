@@ -287,14 +287,13 @@ static void msdisp_usb_disconnect(struct usb_interface *interface)
 	if (!usb_dev)
 		return;
 
-	usb_set_intfdata(interface, NULL);
-
 	if (usb_dev->drm)
 		(void)msdisp_drm_unregister_usb_hal(usb_dev->drm, usb_dev->pipeline_index);
 	if (usb_dev->hal) {
 		usb_hal_destroy(usb_dev->hal);
 		usb_dev->hal = NULL;
 	}
+	usb_set_intfdata(interface, NULL);
 	obj = msdisp_drm_get_pipeline_kobject(usb_dev->drm, usb_dev->pipeline_index);
 	if (obj) {
 		sysfs_remove_link(obj, "usb_dev");
