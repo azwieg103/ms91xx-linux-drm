@@ -193,13 +193,15 @@ static const struct attribute_group usb_hal_attr_group = {
 	.attrs = usb_hal_attribute,
 };
 
-void usb_hal_sysfs_init(struct usb_interface *interface)
+int usb_hal_sysfs_init(struct usb_interface *interface)
 {
-    int r;
-	r = sysfs_create_group(&interface->dev.kobj, &usb_hal_attr_group);
-	if (r) {
-		dev_err(&interface->dev, "create sysfs group fialed! ret=%d\n", r);
-	}
+	int ret;
+
+	ret = sysfs_create_group(&interface->dev.kobj, &usb_hal_attr_group);
+	if (ret)
+		dev_err(&interface->dev, "create sysfs group failed! ret=%d\n", ret);
+
+	return ret;
 }
 
 void usb_hal_sysfs_exit(struct usb_interface *interface)
