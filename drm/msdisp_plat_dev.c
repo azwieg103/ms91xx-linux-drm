@@ -17,8 +17,8 @@
 #include <linux/dma-mapping.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-#if KERNEL_VERSION(5, 9, 0) > LINUX_VERSION_CODE && defined(CONFIG_INTEL_IOMMU)
-#include <linux/intel-iommu.h>
+#if KERNEL_VERSION(5, 9, 0) <= LINUX_VERSION_CODE || defined(EL8)
+#include <linux/iommu.h>
 #endif
 
 #include "msdisp_plat_drv.h"
@@ -36,10 +36,10 @@ struct platform_device *msdisp_platform_dev_create(struct platform_device_info *
 
 	if (dma_set_mask(&platform_dev->dev, DMA_BIT_MASK(64))) {
 		dev_warn(&platform_dev->dev, "Unable to change dma mask to 64 bit. ");
-		dev_warn(&platform_dev->dev, "Sticking with 32 bit\n");
+		dev_warn(&platform_dev->dev, "Sticking with 32 bit\\n");
 	}
 
-	dev_info(&platform_dev->dev, "Msdisp platform_device create\n");
+	dev_info(&platform_dev->dev, "Msdisp platform_device create\\n");
 
 	return platform_dev;
 }
@@ -92,4 +92,3 @@ int msdisp_platform_device_remove(struct platform_device *pdev)
 	return 0;
 }
 #endif
-
