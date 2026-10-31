@@ -1,64 +1,42 @@
 # MacroSilicon MS9133 USB Display Driver for Linux
 
-This repository contains a Linux **USB display driver** for the **MacroSilicon MS9133** USB display controller.
+Linux DRM/KMS driver for the MacroSilicon MS9133 USB display adapter.
 
-| Item | Details |
+## Tested hardware and software
+
+The current verified test system is:
+
+| Item | Tested configuration |
 |---|---|
-| Device / chip | MacroSilicon MS9133 |
-| USB vendor:product ID | `345f:9133` |
-| USB device description | Commonly reported as `MS USB Video` |
-| Linux kernel modules | `usbdisp_drm` and `usbdisp_usb` |
-| Display subsystem | Linux DRM/KMS |
-| Tested operating system | **AlmaLinux 10.2 only** |
+| Host | HP MP9 G4 Retail System |
+| Distribution | AlmaLinux 10.2 |
+| Kernel | `6.12.0-211.69.1.el10_2.x86_64` |
+| Architecture | x86_64 |
+| USB adapter | MacroSilicon MS9133 |
+| USB ID | `345f:9133` (`MS USB Video`) |
+| Desktop | KDE Plasma on Wayland |
+| Verified display mode | 1920x1080 at 60 Hz |
 
-> **Compatibility notice:** This driver has only been tested on AlmaLinux 10.2. Other distributions, AlmaLinux releases, kernel versions, desktop environments, and USB display devices have not been verified. A successful build does not establish that the driver is safe or functional on other systems.
+The adapter successfully initialized, registered its DRM framebuffer, and started video output on this configuration. This is a hardware test result for this specific system—not a guarantee for other kernels, distributions, adapters, or desktop environments.
 
-## Overview
+## What is included
 
-The driver connects a compatible MacroSilicon USB display controller to the Linux Direct Rendering Manager (DRM/KMS) subsystem so that a connected USB display can be exposed to the desktop as an additional display.
+The build produces two kernel modules:
 
-This is a **USB display adapter driver**. It is not a driver for a conventional PCIe graphics card or an integrated GPU.
+- `usbdisp_drm.ko` — DRM/platform driver.
+- `usbdisp_usb.ko` — USB interface and display transport driver.
 
-The source tree builds two kernel modules:
+The source is based on MacroSilicon's Linux driver and includes compatibility and lifecycle fixes for modern kernels.
 
-- `usbdisp_drm.ko` — DRM/platform portion of the driver.
-- `usbdisp_usb.ko` — USB interface portion of the driver.
+## Build
 
-The source is based on MacroSilicon's Linux driver source and includes changes for building against the tested AlmaLinux 10.2 kernel.
-
-## Hardware identification
-
-Connect the adapter and inspect USB devices:
-
-```bash
-lsusb -d 345f:9133
-```
-
-The device may appear with a description similar to:
-
-```text
-ID 345f:9133 MS USB Video
-```
-
-Confirm the USB ID before assuming that a device is supported. Other products may use different MacroSilicon chips or USB IDs; they are not covered by the MS9133 test result.
-
-## Build environment
-
-The tested environment is:
-
-- AlmaLinux 10.2
-- Kernel: `6.12.0-211.69.1.el10_2.x86_64`
-- x86_64
-
-The build requires a compiler, make, and the kernel development files matching the kernel being built for.
-
-Install the build dependencies on AlmaLinux:
+Install the compiler, make, and matching kernel development packages:
 
 ```bash
 sudo dnf install -y gcc make kernel-devel kernel-headers elfutils-libelf-devel
 ```
 
-For an out-of-tree module build, the matching kernel development directory must exist:
+Verify that the running kernel has matching build files:
 
 ```bash
 KVER="$(uname -r)"
@@ -68,67 +46,99 @@ test -e "/lib/modules/$KVER/build/Makefile" || {
 }
 ```
 
-If the running kernel was recently updated, reboot into that kernel or install the matching `kernel-devel` package before building.
-
-## Build
-
-Clone the repository and build against the running kernel:
+Clone and build:
 
 ```bash
 git clone https://github.com/azwieg103/ms91xx-linux-drm.git
 cd ms91xx-linux-drm
-
-make
+make clean
+make -j"$(nproc)" KVER="$(uname -r)"
 ```
 
-To select a specific installed kernel version:
-
-```bash
-make KVER="6.12.0-211.69.1.el10_2.x86_64"
-```
-
-The build should produce:
+The resulting modules should be:
 
 ```text
 drm/usbdisp_drm.ko
 drm/usbdisp_usb.ko
 ```
 
-Check the resulting modules:
+Inspect them with:
 
 ```bash
-file drm/usbdisp_drm.ko drm/usbdisp_usb.ko
 modinfo drm/usbdisp_drm.ko
 modinfo drm/usbdisp_usb.ko
 ```
 
-To remove generated build files:
+To build for a different installed kernel, set `KVER` to that kernel's exact version and ensure its matching development package is installed.
+
+## Loading for a manual test
+
+Loading an out-of-tree kernel driver can crash or hang a system. Save work first and ensure you have a recovery path. Do not force-unload modules that are in use.
+
+With the adapter connected, load the DRM module first, then the USB module:
 
 ```bash
-make clean
+sudo insmod ./drm/usbdisp_drm.ko
+sleep 2
+ls -l /sys/class/drm/
+sudo insmod ./drm/usbdisp_usb.ko
 ```
 
-## DKMS packaging
+Check module and display initialization:
 
-The repository includes `dkms.conf`, `dkms-install.sh`, and `dkms-remove.sh` for DKMS packaging.
+```bash
+lsmod | grep usbdisp
+ls -l /sys/class/drm/
+journalctl -k -b | grep -E 'msdisp|usbdisp|start video|pipe enable'
+```
 
-**Do not run the DKMS installation or removal scripts without first reviewing them for your system.** They modify files under `/usr/src` and `/lib/modules`, update the initramfs, and may attempt to unload or load kernel modules. In particular, the install script includes a live module-reload attempt. Module loading and unloading have not been established as safe on all systems.
+The DRM device may appear as a separate `cardN` under `/sys/class/drm/`. The exact card and connector numbers depend on the other graphics devices in the system.
 
-The presence of DKMS packaging does not mean that installation or automatic loading has been validated on distributions other than the tested AlmaLinux 10.2 environment.
+## Important implementation fixes
 
-## Installation and runtime caution
+Recent work has addressed several issues encountered while bringing the driver up on the tested 6.12 kernel:
 
-Building the modules is separate from loading them into the running kernel. A successful compilation only verifies that the source compiled against the selected kernel headers; it does not verify USB enumeration, display output, disconnect handling, suspend/resume, or system stability.
+- Avoided overwriting kernel-owned device IOMMU state with a pointer to a stack-local structure. The old pointer could become invalid and crash during platform-device removal.
+- Fixed fbdev initialization for kernels where `drm_fb_helper.info` is not preallocated at the time the driver's fbdev probe runs. The previous code could pass a NULL `fb_info` to `drm_fb_helper_fill_info()` and crash during USB probe.
+- Added validation and synchronization around USB HAL registration and DRM pipeline operations.
+- Improved USB HAL sysfs initialization error handling and cleanup.
+- Added guards for sysfs callbacks and USB device driver-data access during probe and teardown.
 
-**Use caution before loading either module.** A kernel driver runs with kernel privileges, and a fault can hang or crash the system. Keep a way to recover the machine and save important work before performing hardware tests. Do not force-unload a module that is in use.
+## Known observations and limitations
 
-No general installation or runtime procedure is claimed to be safe for all systems at this time. Runtime behavior must be validated on the specific hardware and kernel before relying on this driver.
+During successful initialization on the tested system, the kernel emitted a warning from `__alloc_pages_noprof()` while the USB HAL attempted a high-order DMA allocation. The driver then reported:
 
-## Troubleshooting build problems
+```text
+usb 2-9: buf type vmalloc
+init usb_hal0 success!
+```
 
-### Kernel build directory is missing
+The HAL continued initialization and video output started successfully. The allocation warning and fallback behavior remain an area for further investigation; successful display output does not establish that every DMA or memory-pressure scenario is safe.
 
-Check that the development package matches the running kernel:
+The following have not yet been fully validated:
+
+- Reboot-time or automatic module loading.
+- Repeated USB unplug/replug and disconnect recovery.
+- Suspend/resume.
+- Long-duration operation and memory-pressure behavior.
+- Multiple MS9133 adapters.
+- Other distributions, kernel versions, USB display chipsets, and desktop environments.
+
+Treat this as experimental kernel software until those cases have been tested.
+
+## DKMS
+
+The repository includes DKMS-related files. Review `dkms.conf`, `dkms-install.sh`, and `dkms-remove.sh` before using them. DKMS installation changes system module directories and may attempt to load or unload modules; those workflows have not been validated as part of the current hardware test.
+
+## Troubleshooting
+
+Check the adapter identity:
+
+```bash
+lsusb -d 345f:9133
+```
+
+Check the running kernel and matching development package:
 
 ```bash
 uname -r
@@ -136,23 +146,14 @@ rpm -q "kernel-devel-$(uname -r)"
 ls -ld "/lib/modules/$(uname -r)/build"
 ```
 
-### Module version information
-
-Inspect a built module with:
+Review driver messages:
 
 ```bash
-modinfo drm/usbdisp_drm.ko
-modinfo drm/usbdisp_usb.ko
+journalctl -k -b | grep -E -i 'msdisp|usbdisp|345f:9133|drm|dma'
 ```
 
-The module's `vermagic` should match the target kernel. If it does not, rebuild using the matching kernel development files and `KVER`.
-
-## Project status
-
-This is an experimental, hardware-specific Linux kernel driver project. The current documented test baseline is **AlmaLinux 10.2 with the kernel listed above**. Testing on other systems is not implied.
-
-Issues and contributions are welcome, but please include the exact adapter USB ID, distribution release, kernel version, build output, and relevant kernel log messages when reporting a problem.
+When reporting an issue, include the adapter USB ID, distribution release, kernel version, build output, and relevant kernel log messages.
 
 ## License and provenance
 
-See [LICENSE](LICENSE) for the license terms included with the source. The driver is derived from MacroSilicon's published Linux source; retain the applicable copyright and license notices when modifying or redistributing it.
+See [LICENSE](LICENSE) for the license terms included with the source. Retain applicable copyright and license notices when modifying or redistributing the driver.
