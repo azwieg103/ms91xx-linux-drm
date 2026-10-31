@@ -25,6 +25,8 @@
 static ssize_t usb_hal_buf_show(struct device* dev, struct device_attribute* attr, char* buf)
 {
     struct usb_hal* usb_hal = usb_intf_device_to_hal_func(dev);
+    if (!usb_hal || !usb_hal->private)
+        return -ENODEV;
     struct usb_hal_dev* usb_dev = usb_hal->private;
 	struct usb_hal_buffer* usb_buf = &usb_dev->usb_buf;
 	char tmp[256];
@@ -45,6 +47,8 @@ static ssize_t usb_hal_buf_show(struct device* dev, struct device_attribute* att
 static ssize_t usb_hal_frame_show(struct device* dev, struct device_attribute* attr, char* buf)
 {
     struct usb_hal* usb_hal = usb_intf_device_to_hal_func(dev);
+    if (!usb_hal || !usb_hal->private)
+        return -ENODEV;
     struct usb_hal_dev* usb_dev = usb_hal->private;
     struct usb_hal_dev_frame_stat* stat = &usb_dev->stat;
 	char tmp[256];
@@ -74,6 +78,8 @@ static ssize_t usb_hal_frame_show(struct device* dev, struct device_attribute* a
 static ssize_t usb_hal_dev_show(struct device* dev, struct device_attribute* attr, char* buf)
 {
     struct usb_hal* usb_hal = usb_intf_device_to_hal_func(dev);
+    if (!usb_hal || !usb_hal->private)
+        return -ENODEV;
 	struct usb_hal_dev* usb_dev = usb_hal->private;
 	char tmp[96];
 
@@ -114,6 +120,8 @@ static ssize_t usb_hal_custom_mode_show(struct device* dev, struct device_attrib
 static ssize_t usb_hal_write_xdata_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count)
 {
     struct usb_hal* usb_hal = usb_intf_device_to_hal_func(dev);
+    if (!usb_hal || !usb_hal->private)
+        return -ENODEV;
     struct usb_hal_dev* usb_dev = usb_hal->private;
 	const struct msdisp_hal_dev* hal_dev = usb_dev->hal_dev;
 	u32 reg, data;
@@ -139,6 +147,8 @@ static ssize_t usb_hal_write_xdata_store(struct device* dev, struct device_attri
 static ssize_t usb_hal_read_xdata_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count)
 {
     struct usb_hal* usb_hal = usb_intf_device_to_hal_func(dev);
+    if (!usb_hal || !usb_hal->private)
+        return -ENODEV;
     struct usb_hal_dev* usb_dev = usb_hal->private;
 	const struct msdisp_hal_dev* hal_dev = usb_dev->hal_dev;
 	u16 reg;
