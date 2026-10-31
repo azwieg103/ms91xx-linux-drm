@@ -10,7 +10,7 @@ Source0:        %{name}-%{version}.tar.gz
 %{!?kver:%{error:Pass --define 'kver <kernel-release>' to rpmbuild}}
 BuildRequires:  gcc
 BuildRequires:  make
-BuildRequires:  kernel-devel = %{kver}
+BuildRequires:  kernel-devel-uname-r = %{kver}
 BuildRequires:  elfutils-libelf-devel
 Requires:       kernel-uname-r = %{kver}
 Requires:       kmod
@@ -45,13 +45,6 @@ install -D -m 0644 packaging/rpm/msdisp.conf %{buildroot}%{_sysconfdir}/modprobe
 
 %post
 /sbin/depmod -a %{kver} || :
-/usr/bin/systemctl try-restart systemd-modules-load.service >/dev/null 2>&1 || :
-
-%preun
-if [ "$1" -eq 0 ]; then
-    /usr/bin/rm -f %{_sysconfdir}/modprobe.d/msdisp.conf
-    /usr/bin/rm -f %{_prefix}/lib/modules-load.d/msdisp.conf
-fi
 
 %postun
 /sbin/depmod -a %{kver} || :
