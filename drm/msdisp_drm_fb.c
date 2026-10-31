@@ -381,19 +381,17 @@ int msdisp_drm_fbdev_probe(struct drm_fb_helper *fb_helper,
 	fb_helper->buffer = buffer;
 	fb_helper->fb = fb;
 
-#if KERNEL_VERSION(6, 12, 0) <= LINUX_VERSION_CODE
-	/* Upstream commit 63c971af4036 ("drm/fb-helper: Allocate and release
-	 * fb_info in single place", merged in 6.13 and backported to 6.12.y /
-	 * Debian 13) moved drm_fb_helper_alloc_info() and release_info() into
-	 * drm_fb_helper_single_fb_probe(), pre-populating fb_helper->info. */
+/* Newer fb-helper implementations normally preallocate info before
+	 * calling fbdev_probe(), but some vendor kernels with the 6.12 API do
+	 * not. Reuse it when present and allocate it otherwise. */
 	info = fb_helper->info;
-#else
-	info = drm_fb_helper_alloc_info(fb_helper);
-	if (IS_ERR(info)) {
-		ret = PTR_ERR(info);
-		goto err_drm_client_buffer_vunmap;
+	if (!info) {
+		info = drm_fb_helper_alloc_info(fb_helper);
+		if (IS_ERR(info)) {
+			ret = PTR_ERR(info);
+			goto err_drm_client_buffer_vunmap;
+		}
 	}
-#endif
 
 	drm_fb_helper_fill_info(info, fb_helper, sizes);
 
