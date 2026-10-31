@@ -1128,7 +1128,7 @@ static int usb_dev_hal_init(struct usb_hal* usb_hal)
 
 struct usb_hal* usb_hal_init(struct usb_interface *interface, const struct usb_device_id *id, struct kfifo* fifo, u32 index)
 {
-    struct usb_device *udev = interface_to_usbdev(interface);
+    struct usb_device *udev;
     struct usb_hal* usb_hal = NULL;
     struct usb_hal_dev* usb_dev = NULL;
     char name[32];
@@ -1139,6 +1139,7 @@ struct usb_hal* usb_hal_init(struct usb_interface *interface, const struct usb_d
         return NULL;
     }
 
+    udev = interface_to_usbdev(interface);
     usb_hal = kzalloc(sizeof(*usb_hal), GFP_KERNEL);
     if (!usb_hal) {
         dev_err(&udev->dev, "kzalloc usb_hal failed!\n");
