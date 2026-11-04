@@ -40,7 +40,7 @@ install -D -m 0644 packaging/rpm/msdisp.modules-load \
 %post
 if command -v dkms >/dev/null 2>&1; then
     # Retire older manually installed DKMS versions during package upgrades.
-    for old_version in $(dkms status -m msdisp 2>/dev/null | sed -n 's#^msdisp/\\([^, :]*\\).*#\\1#p' | sort -u); do
+    for old_version in $(dkms status -m msdisp 2>/dev/null | awk -F'[/,: ]+' '{print $2}' | sort -u); do
         if [ "$old_version" != "%{version}" ]; then
             dkms remove -m msdisp -v "$old_version" --all >/dev/null 2>&1 || :
             rm -rf "/usr/src/msdisp-$old_version"
