@@ -25,11 +25,11 @@ rm -rf %{buildroot}
 install -d -m 0755 %{buildroot}%{_usrsrc}/msdisp-%{version}
 cp -a . %{buildroot}%{_usrsrc}/msdisp-%{version}/
 rm -rf %{buildroot}%{_usrsrc}/msdisp-%{version}/.git
-find %{buildroot}%{_usrsrc}/msdisp-%{version} -type f \\
-  \( -name '*.o' -o -name '*.ko' -o -name '*.mod' -o -name '*.mod.c' \\
-     -o -name '*.cmd' -o -name '.*.cmd' -o -name 'Module.symvers' \\
-     -o -name 'modules.order' \\) -delete
-install -D -m 0644 packaging/rpm/msdisp.modules-load \\
+find %{buildroot}%{_usrsrc}/msdisp-%{version} -type f \
+  \( -name '*.o' -o -name '*.ko' -o -name '*.mod' -o -name '*.mod.c' \
+     -o -name '*.cmd' -o -name '.*.cmd' -o -name 'Module.symvers' \
+     -o -name 'modules.order' \) -delete
+install -D -m 0644 packaging/rpm/msdisp.modules-load \
   %{buildroot}%{_prefix}/lib/modules-load.d/msdisp.conf
 
 %files
