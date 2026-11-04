@@ -5,4 +5,13 @@ usbdisp_usb-y := msdisp_usb_drv.o ms9132_hal.o $(usb_hal_o)
 obj-m := usbdisp_drm.o usbdisp_usb.o 
 
 ccflags-y := -isystem include/drm -I$(HAL_PATH) $(CFLAGS) $(EL8FLAG) $(RPIFLAG)
+
+# Enterprise kernels backport DRM client API changes without changing
+# LINUX_VERSION_CODE. Detect the actual declarations in the target headers.
+ifneq ($(shell grep -q 'drm_client_buffer_create_dumb' "$(KDIR)/include/drm/drm_client.h" && echo yes),)
+ccflags-y += -DMSDISP_HAVE_DRM_CLIENT_BUFFER_CREATE_DUMB
+endif
+ifneq ($(shell grep -q 'drm_fb_helper_alloc_info' "$(KDIR)/include/drm/drm_fb_helper.h" && echo yes),)
+ccflags-y += -DMSDISP_HAVE_DRM_FB_HELPER_ALLOC_INFO
+endif
 CFLAGS_usbdisp_usb.o += -I$(HAL_PATH)
