@@ -275,12 +275,14 @@ static void msdisp_fbdev_fb_destroy(struct fb_info *info)
 	vfree(shadow);
 
 	drm_client_buffer_vunmap(fb_helper->buffer);
-#if KERNEL_VERSION(6, 18, 0) <= LINUX_VERSION_CODE
+#if defined(MSDISP_HAVE_DRM_CLIENT_BUFFER_CREATE_DUMB)
 	drm_client_buffer_delete(fb_helper->buffer);
-	drm_client_release(&fb_helper->client);
 #else
 	drm_client_framebuffer_delete(fb_helper->buffer);
+#endif
 	drm_client_release(&fb_helper->client);
+#if KERNEL_VERSION(6, 18, 0) > LINUX_VERSION_CODE
+	/* Older fb-helper implementations leave this allocation to the driver. */
 	drm_fb_helper_unprepare(fb_helper);
 	kfree(fb_helper);
 #endif
@@ -357,7 +359,7 @@ int msdisp_drm_fbdev_probe(struct drm_fb_helper *fb_helper,
 		    sizes->surface_bpp);
 
 	format = drm_driver_legacy_fb_format(dev, sizes->surface_bpp, sizes->surface_depth);
-#if KERNEL_VERSION(6, 18, 0) <= LINUX_VERSION_CODE
+#if defined(MSDISP_HAVE_DRM_CLIENT_BUFFER_CREATE_DUMB)
 	buffer = drm_client_buffer_create_dumb(client, sizes->surface_width,
 					       sizes->surface_height, format);
 #else
@@ -385,6 +387,7 @@ int msdisp_drm_fbdev_probe(struct drm_fb_helper *fb_helper,
 	 * calling fbdev_probe(), but some vendor kernels with the 6.12 API do
 	 * not. Reuse it when present and allocate it otherwise. */
 	info = fb_helper->info;
+#if defined(MSDISP_HAVE_DRM_FB_HELPER_ALLOC_INFO)
 	if (!info) {
 		info = drm_fb_helper_alloc_info(fb_helper);
 		if (IS_ERR(info)) {
@@ -392,6 +395,13 @@ int msdisp_drm_fbdev_probe(struct drm_fb_helper *fb_helper,
 			goto err_drm_client_buffer_vunmap;
 		}
 	}
+#else
+	/* Newer DRM fb-helper cores allocate info before calling fbdev_probe. */
+	if (WARN_ON_ONCE(!info)) {
+		ret = -EINVAL;
+		goto err_drm_client_buffer_vunmap;
+	}
+#endif
 
 	drm_fb_helper_fill_info(info, fb_helper, sizes);
 
@@ -428,7 +438,7 @@ err_drm_client_buffer_vunmap:
 	fb_helper->buffer = NULL;
 	drm_client_buffer_vunmap(buffer);
 err_drm_client_buffer_delete:
-#if KERNEL_VERSION(6, 18, 0) <= LINUX_VERSION_CODE
+#if defined(MSDISP_HAVE_DRM_CLIENT_BUFFER_CREATE_DUMB)
 	drm_client_buffer_delete(buffer);
 #else
 	drm_client_framebuffer_delete(buffer);
