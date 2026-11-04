@@ -55,7 +55,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          VERSION=3.1.7
+          VERSION=3.1.8
           TOP="$HOME/rpmbuild"
           mkdir -p "$TOP"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
           tar -czf "$TOP/SOURCES/ms91xx-linux-drm-${VERSION}.tar.gz" \
@@ -74,7 +74,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          VERSION=3.1.7
+          VERSION=3.1.8
           KVER="$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-devel | tail -n1)"
           # Container runners do not boot the distro kernel, so kernel-core
           # is absent and DKMS cannot find the normal /lib/modules build link.
@@ -96,7 +96,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          dkms status -m msdisp -v 3.1.7
+          dkms status -m msdisp -v 3.1.8
           find /var/lib/dkms/msdisp -name make.log -type f -print -exec cat {} \; 2>/dev/null
 
       - name: Upload RPM artifacts
