@@ -1,4 +1,4 @@
-name: Build EL10 RPMs
+name: Build and test EL10 DKMS RPMs
 
 on:
   push:
@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   build-rpm:
-    name: Build on ${{ matrix.distro }}
+    name: Build and test on ${{ matrix.distro }}
     runs-on: ubuntu-latest
     container:
       image: ${{ matrix.image }}
@@ -34,13 +34,15 @@ jobs:
             image: quay.io/centos/centos:stream10
 
     steps:
-      - name: Install build dependencies
+      - name: Install build and DKMS test dependencies
         shell: bash
         run: |
+          set -euxo pipefail
           dnf -y install dnf-plugins-core
-          dnf -y install gcc make git elfutils-libelf-devel rpm-build rpmdevtools kernel-devel tar gzip findutils
-          rpm -q kernel-devel
-          rpm -q --provides kernel-devel | grep '^kernel-devel-uname-r = '
+          dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
+          dnf -y install gcc make elfutils-libelf-devel rpm-build rpmdevtools kernel-devel tar gzip findutils dkms
+          rpm -q kernel-devel dkms
+          test -d "/usr/src/kernels/$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-devel)"
 
       - name: Check out source
         uses: actions/checkout@v4
@@ -49,25 +51,42 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          KVER="$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-devel)"
-          mkdir -p "$HOME/rpmbuild"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
-          tar -czf "$HOME/rpmbuild/SOURCES/ms91xx-linux-drm-3.1.6.tar.gz" \
-            --transform='s,^\./,ms91xx-linux-drm-3.1.6/,' \
+          VERSION=3.1.6
+          TOP="$HOME/rpmbuild"
+          mkdir -p "$TOP"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+          tar -czf "$TOP/SOURCES/ms91xx-linux-drm-${VERSION}.tar.gz" \\
+            --transform="s,^\\./,ms91xx-linux-drm-${VERSION}/," \\
             --exclude='./.git' .
-          cp packaging/rpm/ms91xx-linux-drm.spec "$HOME/rpmbuild/SPECS/"
-          rpmbuild -ba "$HOME/rpmbuild/SPECS/ms91xx-linux-drm.spec" \
-            --define "_topdir $HOME/rpmbuild" \
-            --define "kver ${KVER}"
+          cp packaging/rpm/ms91xx-linux-drm.spec "$TOP/SPECS/"
+          rpmbuild -ba "$TOP/SPECS/ms91xx-linux-drm.spec" \\
+            --define "_topdir $TOP"
           mkdir -p dist
-          find "$HOME/rpmbuild/RPMS" "$HOME/rpmbuild/SRPMS" -type f \
+          find "$TOP/RPMS" "$TOP/SRPMS" -type f \\
             \( -name '*.rpm' -o -name '*.src.rpm' \) -exec cp -v {} dist/ \;
-          rpm -qp --info dist/*.rpm
-          rpm -qp --requires dist/*.rpm
+          rpm -qp --info dist/ms91xx-linux-drm-dkms-*.rpm
+          rpm -qp --requires dist/ms91xx-linux-drm-dkms-*.rpm
+
+      - name: Install RPM and verify DKMS module build
+        shell: bash
+        run: |
+          set -euxo pipefail
+          VERSION=3.1.6
+          KVER="$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-devel | tail -n1)"
+          RPM_FILE="$(find dist -maxdepth 1 -type f -name 'ms91xx-linux-drm-dkms-*.rpm' -print -quit)"
+          test -n "$RPM_FILE"
+          dnf -y install "$RPM_FILE"
+          dkms status -m msdisp -v "$VERSION"
+          modinfo -k "$KVER" usbdisp_drm
+          modinfo -k "$KVER" usbdisp_usb
+          test -e "/lib/modules/$KVER/updates/dkms/usbdisp_drm.ko" -o -e "/lib/modules/$KVER/updates/dkms/usbdisp_drm.ko.xz"
+          test -e "/lib/modules/$KVER/updates/dkms/usbdisp_usb.ko" -o -e "/lib/modules/$KVER/updates/dkms/usbdisp_usb.ko.xz"
+          test -f /usr/lib/modules-load.d/msdisp.conf
+          cat /usr/lib/modules-load.d/msdisp.conf
 
       - name: Upload RPM artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ms91xx-rpm-${{ matrix.distro }}-${{ github.sha }}
+          name: ms91xx-dkms-rpm-${{ matrix.distro }}-${{ github.sha }}
           path: dist/*
           if-no-files-found: error
           retention-days: 30
