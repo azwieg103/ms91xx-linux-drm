@@ -72,6 +72,10 @@ jobs:
           set -euxo pipefail
           VERSION=3.1.6
           KVER="$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-devel | tail -n1)"
+          # Container runners do not boot the distro kernel, so kernel-core
+          # is absent and DKMS cannot find the normal /lib/modules build link.
+          mkdir -p "/lib/modules/$KVER"
+          ln -sfn "/usr/src/kernels/$KVER" "/lib/modules/$KVER/build"
           RPM_FILE="$(find dist -maxdepth 1 -type f -name 'ms91xx-linux-drm-dkms-*.noarch.rpm' -print -quit)"
           test -n "$RPM_FILE"
           dnf -y install "$RPM_FILE"
