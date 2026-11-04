@@ -38,7 +38,7 @@ jobs:
         shell: bash
         run: |
           dnf -y install dnf-plugins-core
-          dnf -y install gcc make elfutils-libelf-devel rpm-build rpmdevtools kernel-devel tar gzip findutils
+          dnf -y install gcc make git elfutils-libelf-devel rpm-build rpmdevtools kernel-devel tar gzip findutils
           rpm -q kernel-devel
           rpm -q --provides kernel-devel | grep '^kernel-devel-uname-r = '
 
