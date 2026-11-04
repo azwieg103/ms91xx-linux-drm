@@ -1,5 +1,5 @@
 Name:           ms91xx-linux-drm-dkms
-Version:        3.1.6
+Version:        3.1.7
 Release:        1%{?dist}
 Summary:        MacroSilicon MS9133 USB display driver (DKMS source)
 License:        GPL-2.0-only
@@ -39,6 +39,13 @@ install -D -m 0644 packaging/rpm/msdisp.modules-load \
 
 %post
 if command -v dkms >/dev/null 2>&1; then
+    # Retire older manually installed DKMS versions during package upgrades.
+    for old_version in $(dkms status -m msdisp 2>/dev/null | sed -n 's#^msdisp/\\([^, :]*\\).*#\\1#p' | sort -u); do
+        if [ "$old_version" != "%{version}" ]; then
+            dkms remove -m msdisp -v "$old_version" --all >/dev/null 2>&1 || :
+            rm -rf "/usr/src/msdisp-$old_version"
+        fi
+    done
     dkms add -m msdisp -v %{version} >/dev/null 2>&1 || :
     if rpm -q kernel-devel >/dev/null 2>&1; then
         for kver in $(rpm -q --qf '%%{VERSION}-%%{RELEASE}.%%{ARCH} ' kernel-devel); do
@@ -62,7 +69,10 @@ fi
 /sbin/depmod -a >/dev/null 2>&1 || :
 
 %changelog
+* Wed Nov 04 2026 Andrew Zwieg <andrew@zwiegnet.com> - 3.1.7-1
+- Add feature detection for DRM API backports in Enterprise Linux kernels.
+- Upgrade existing msdisp DKMS installations cleanly.
+- Build and validate the kernel-independent DKMS RPM across EL10 distributions.
+
 * Wed Nov 04 2026 Andrew Zwieg <andrew@zwiegnet.com> - 3.1.6-1
-- Package driver source as a kernel-independent DKMS RPM.
-- Register and build modules through DKMS on installation.
-- Rebuild for installed and future kernels with matching kernel-devel packages.
+- Initial kernel-independent DKMS RPM packaging.
