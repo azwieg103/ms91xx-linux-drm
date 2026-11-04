@@ -1,5 +1,5 @@
 Name:           ms91xx-linux-drm-dkms
-Version:        3.1.8
+Version:        3.1.9
 Release:        1%{?dist}
 Summary:        MacroSilicon MS9133 USB display driver (DKMS source)
 License:        GPL-2.0-only
@@ -78,6 +78,11 @@ fi
 /sbin/depmod -a >/dev/null 2>&1 || :
 
 %changelog
+* Wed Nov 04 2026 Andrew Zwieg <andrew@zwiegnet.com> - 3.1.9-1
+- Correct embedded driver and DKMS version metadata to 3.1.9.
+- Validate module metadata matches the RPM version in all EL10 builds.
+- Derive build and release versions from the RPM spec and tag.
+
 * Wed Nov 04 2026 Andrew Zwieg <andrew@zwiegnet.com> - 3.1.8-1
 - Preserve the previous driver unless the new DKMS build succeeds for all installed kernels.
 - Retire older DKMS versions only after successful replacement builds.
