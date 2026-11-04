@@ -189,9 +189,15 @@ Recent work has addressed issues encountered while bringing the driver up on mod
 - Added guards for sysfs callbacks and USB device driver-data access during probe and teardown.
 - Corrected the module version metadata and DKMS version tracking in 3.1.9.
 
+## Contributing
+
+Community contributions should be submitted as pull requests against the **`dev`** branch. Do not target `main` for feature or bug-fix contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) for the fork, testing, and pull-request process. Security issues should be reported privately as described in [SECURITY.md](SECURITY.md).
+
+Changes are tested on AlmaLinux 10, Rocky Linux 10, Oracle Linux 10, and CentOS Stream 10. A passing CI build is required but does not replace maintainer review or hardware validation. The maintainer promotes tested changes from `dev` to `main` and controls version tags and official releases.
+
 ## CI and release process
 
-The workflow at `.github/workflows/build-el10-rpm.yml` runs on pushes to `main`, version tags, pull requests, and manual dispatch.
+The workflow at `.github/workflows/build-el10-rpm.yml` runs on pushes to `main` and `dev`, version tags, pull requests targeting `main` or `dev`, and manual dispatch. Pull requests targeting `main` are restricted by CI to promotion from this repository's `dev` branch.
 
 For each EL10 distribution, CI:
 

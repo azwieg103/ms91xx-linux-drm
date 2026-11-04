@@ -2,13 +2,13 @@ name: Build and test EL10 DKMS RPMs
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     tags: ['v*']
     paths:
       - '**'
       - '.github/workflows/build-el10-rpm.yml'
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 
 permissions:
@@ -38,6 +38,20 @@ jobs:
             image: quay.io/centos/centos:stream10
 
     steps:
+      - name: Restrict pull requests into main to maintainer promotion from dev
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$HEAD_REF" != "dev" || "$HEAD_REPO" != "$BASE_REPO" ]]; then
+            echo "Pull requests into main must come from this repository's dev branch."
+            exit 1
+          fi
+
       - name: Install build and DKMS test dependencies
         shell: bash
         run: |
