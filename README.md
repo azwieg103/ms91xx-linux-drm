@@ -178,7 +178,7 @@ Enable EPEL (DKMS is provided there on Enterprise Linux) and install the
 matching development tools:
 
 ```bash
-sudo dnf install -y epel-release
+sudo dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
 sudo dnf install -y dkms gcc make kernel-devel elfutils-libelf-devel
 ```
 
