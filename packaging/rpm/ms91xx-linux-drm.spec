@@ -45,6 +45,7 @@ if command -v dkms >/dev/null 2>&1; then
             echo "Building msdisp/%{version} for kernel $kver"
             dkms install -m msdisp -v %{version} -k "$kver" --force ||
                 echo "WARNING: DKMS build failed for kernel $kver."
+            /sbin/depmod -a "$kver" || :
         done
     else
         echo "WARNING: Install matching kernel-devel packages to build msdisp."
