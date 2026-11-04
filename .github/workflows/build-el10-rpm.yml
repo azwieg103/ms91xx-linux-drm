@@ -72,7 +72,7 @@ jobs:
           set -euxo pipefail
           VERSION=3.1.6
           KVER="$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-devel | tail -n1)"
-          RPM_FILE="$(find dist -maxdepth 1 -type f -name 'ms91xx-linux-drm-dkms-*.rpm' -print -quit)"
+          RPM_FILE="$(find dist -maxdepth 1 -type f -name 'ms91xx-linux-drm-dkms-*.noarch.rpm' -print -quit)"
           test -n "$RPM_FILE"
           dnf -y install "$RPM_FILE"
           dkms status -m msdisp -v "$VERSION"
