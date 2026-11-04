@@ -40,7 +40,7 @@ install -D -m 0644 packaging/rpm/msdisp.modules-load \
 %post
 if command -v dkms >/dev/null 2>&1; then
     dkms add -m msdisp -v %{version} >/dev/null 2>&1 || :
-    dkms autoinstall -m msdisp -v %{version} >/dev/null 2>&1 || :
+    dkms autoinstall || echo "WARNING: DKMS could not build msdisp for one or more installed kernels."
 fi
 /sbin/depmod -a >/dev/null 2>&1 || :
 
