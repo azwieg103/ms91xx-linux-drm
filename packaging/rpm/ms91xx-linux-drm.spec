@@ -41,7 +41,7 @@ install -D -m 0644 packaging/rpm/msdisp.modules-load \
 if command -v dkms >/dev/null 2>&1; then
     dkms add -m msdisp -v %{version} >/dev/null 2>&1 || :
     if rpm -q kernel-devel >/dev/null 2>&1; then
-        for kver in $(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}\\n' kernel-devel); do
+        for kver in $(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' kernel-devel); do
             echo "Building msdisp/%{version} for kernel $kver"
             dkms install -m msdisp -v %{version} -k "$kver" --force ||
                 echo "WARNING: DKMS build failed for kernel $kver."
