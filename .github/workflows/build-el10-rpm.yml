@@ -82,8 +82,8 @@ jobs:
           dkms status -m msdisp -v "$VERSION"
           modinfo -k "$KVER" usbdisp_drm
           modinfo -k "$KVER" usbdisp_usb
-          test -e "/lib/modules/$KVER/updates/dkms/usbdisp_drm.ko" -o -e "/lib/modules/$KVER/updates/dkms/usbdisp_drm.ko.xz"
-          test -e "/lib/modules/$KVER/updates/dkms/usbdisp_usb.ko" -o -e "/lib/modules/$KVER/updates/dkms/usbdisp_usb.ko.xz"
+          test -e "/lib/modules/$KVER/extra/usbdisp_drm.ko" -o -e "/lib/modules/$KVER/extra/usbdisp_drm.ko.xz"
+          test -e "/lib/modules/$KVER/extra/usbdisp_usb.ko" -o -e "/lib/modules/$KVER/extra/usbdisp_usb.ko.xz"
           test -f /usr/lib/modules-load.d/msdisp.conf
           cat /usr/lib/modules-load.d/msdisp.conf
 
