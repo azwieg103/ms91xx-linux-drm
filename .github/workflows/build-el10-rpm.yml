@@ -51,8 +51,9 @@ jobs:
           set -euxo pipefail
           KVER="$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-devel)"
           mkdir -p "$HOME/rpmbuild"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
-          git archive --format=tar.gz --prefix="ms91xx-linux-drm-3.1.6/" HEAD \
-            > "$HOME/rpmbuild/SOURCES/ms91xx-linux-drm-3.1.6.tar.gz"
+          tar -czf "$HOME/rpmbuild/SOURCES/ms91xx-linux-drm-3.1.6.tar.gz" \
+            --transform='s,^\./,ms91xx-linux-drm-3.1.6/,' \
+            --exclude='./.git' .
           cp packaging/rpm/ms91xx-linux-drm.spec "$HOME/rpmbuild/SPECS/"
           rpmbuild -ba "$HOME/rpmbuild/SPECS/ms91xx-linux-drm.spec" \
             --define "_topdir $HOME/rpmbuild" \
