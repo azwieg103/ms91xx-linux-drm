@@ -34,7 +34,6 @@ install -D -m 0644 packaging/rpm/msdisp.modules-load \
 
 %files
 %defattr(-,root,root,-)
-%dir %{_usrsrc}/msdisp-%{version}
 %{_usrsrc}/msdisp-%{version}
 %{_prefix}/lib/modules-load.d/msdisp.conf
 
