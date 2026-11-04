@@ -158,66 +158,87 @@ When reporting an issue, include the adapter USB ID, distribution release, kerne
 
 See [LICENSE](LICENSE) for the license terms included with the source. Retain applicable copyright and license notices when modifying or redistributing the driver.
 
-## Building RPM and SRPM packages (AlmaLinux 10)
+## RPM package (EL10 family)
 
-The repository includes an RPM spec for building a **kernel-specific** binary RPM and SRPM. The package contains both kernel modules and a systemd modules-load configuration that loads usbdisp_drm before usbdisp_usb during boot.
+The project ships a **kernel-independent DKMS RPM**. Unlike a precompiled,
+kernel-specific RPM, it installs the driver source under
+`/usr/src/msdisp-3.1.6` and registers it with DKMS. DKMS compiles the two
+modules against each installed kernel's matching development files and can
+rebuild them when a new kernel is installed.
 
-This is intentionally not a kABI/weak-updates package. Build a new RPM for each kernel release you intend to boot.
+The GitHub Actions workflow builds the RPM on AlmaLinux 10, Rocky Linux 10,
+Oracle Linux 10, and CentOS Stream 10. Each CI job also installs the RPM and
+checks that DKMS successfully builds both modules for that distribution's
+kernel-devel package. The workflow artifacts are test outputs; tagged GitHub
+releases are the intended location for versioned end-user downloads.
 
-Install the packaging tools and matching kernel development package:
+### Install prerequisites
+
+Enable EPEL (DKMS is provided there on Enterprise Linux) and install the
+matching development tools:
 
 ```bash
-sudo dnf install -y rpm-build rpmdevtools gcc make elfutils-libelf-devel kernel-devel
+sudo dnf install -y epel-release
+sudo dnf install -y dkms gcc make kernel-devel elfutils-libelf-devel
 ```
 
-From a clean checkout, create the source tarball and RPM build directories:
+For the running kernel, verify that its build tree exists:
+
+```bash
+KVER="$(uname -r)"
+test -e "/lib/modules/$KVER/build/Makefile" || {
+    echo "Missing kernel-devel for $KVER"
+    exit 1
+}
+```
+
+### Build the RPM locally
+
+From a clean checkout:
 
 ```bash
 VERSION=3.1.6
-KVER="$(uname -r)"
 TOP="$HOME/rpmbuild"
 mkdir -p "$TOP"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
-git archive --format=tar.gz --prefix="ms91xx-linux-drm-$VERSION/" HEAD \
-  -o "$TOP/SOURCES/ms91xx-linux-drm-$VERSION.tar.gz"
+tar -czf "$TOP/SOURCES/ms91xx-linux-drm-$VERSION.tar.gz" \
+  --transform="s,^\\./,ms91xx-linux-drm-$VERSION/," \
+  --exclude='./.git' .
 cp packaging/rpm/ms91xx-linux-drm.spec "$TOP/SPECS/"
+rpmbuild -ba "$TOP/SPECS/ms91xx-linux-drm.spec" --define "_topdir $TOP"
 ```
 
-Build both the binary RPM and SRPM:
+Install the resulting DKMS RPM:
 
 ```bash
-rpmbuild -ba "$TOP/SPECS/ms91xx-linux-drm.spec" --define "kver $KVER"
+sudo dnf install "$TOP"/RPMS/noarch/ms91xx-linux-drm-dkms-*.rpm
 ```
 
-Outputs are written under ~/rpmbuild/RPMS/x86_64/ and ~/rpmbuild/SRPMS/.
+The RPM registers `msdisp/3.1.6` with DKMS and attempts to build it for
+installed kernels. Ensure the matching `kernel-devel` package is installed
+for every kernel you intend to boot. The RPM also installs
+`/usr/lib/modules-load.d/msdisp.conf`, which loads `usbdisp_drm` before
+`usbdisp_usb` at boot.
 
-The build requires the exact kernel development package for the selected kernel. Confirm it is available before building:
-
-```bash
-rpm -q "kernel-devel-uname-r = $(uname -r)"
-```
-
-Install the resulting kernel-specific RPM:
+Verify the registration and module resolution:
 
 ```bash
-sudo dnf install "$HOME"/rpmbuild/RPMS/x86_64/ms91xx-linux-drm-*.rpm
-```
-
-The RPM installs the modules under /lib/modules/KVER/extra/ms91xx/, runs depmod, and installs /usr/lib/modules-load.d/msdisp.conf with the module names in load order. The driver modules will therefore be loaded at boot, including when the USB adapter is not yet connected; the USB driver will bind when the adapter appears.
-
-**Before installing:** remove the earlier manual blacklist if it is still present:
-
-```bash
-sudo rm -f /etc/modprobe.d/blacklist-msdisp.conf
-```
-
-Do not install the RPM while the old blacklist remains, because it would prevent the modules from loading. The RPM does not silently delete administrator-created blacklist files.
-
-After installation, verify module discovery and boot configuration:
-
-```bash
+dkms status -m msdisp
 modinfo -n usbdisp_drm
 modinfo -n usbdisp_usb
 cat /usr/lib/modules-load.d/msdisp.conf
 ```
 
-A reboot is the recommended first startup test. Keep a recovery path available: the driver is still experimental, and suspend/resume, repeated unplug/replug, and long-duration operation have not yet been fully validated.
+If Secure Boot is enabled, configure and enroll a DKMS signing key before
+loading the modules. A successful DKMS build alone does not enroll a signing
+key or authorize the modules under Secure Boot.
+
+### Remove
+
+```bash
+sudo dnf remove ms91xx-linux-drm-dkms
+```
+
+Removing the RPM unregisters this driver version from DKMS. If a module is
+currently in use by the display session, reboot before expecting it to be
+fully unloaded.
+
