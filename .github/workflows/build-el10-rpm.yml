@@ -14,6 +14,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ms91xx-dkms-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-rpm:
     name: Build and test on ${{ matrix.distro }}
