@@ -201,7 +201,7 @@ VERSION=3.1.6
 TOP="$HOME/rpmbuild"
 mkdir -p "$TOP"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
 tar -czf "$TOP/SOURCES/ms91xx-linux-drm-$VERSION.tar.gz" \
-  --transform="s,^\\./,ms91xx-linux-drm-$VERSION/," \
+  --transform="s,^\./,ms91xx-linux-drm-$VERSION/," \
   --exclude='./.git' .
 cp packaging/rpm/ms91xx-linux-drm.spec "$TOP/SPECS/"
 rpmbuild -ba "$TOP/SPECS/ms91xx-linux-drm.spec" --define "_topdir $TOP"
