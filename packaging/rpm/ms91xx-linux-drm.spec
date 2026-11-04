@@ -1,5 +1,5 @@
 Name:           ms91xx-linux-drm-dkms
-Version:        3.1.7
+Version:        3.1.8
 Release:        1%{?dist}
 Summary:        MacroSilicon MS9133 USB display driver (DKMS source)
 License:        GPL-2.0-only
@@ -39,23 +39,32 @@ install -D -m 0644 packaging/rpm/msdisp.modules-load \
 
 %post
 if command -v dkms >/dev/null 2>&1; then
-    # Retire older manually installed DKMS versions during package upgrades.
-    for old_version in $(dkms status -m msdisp 2>/dev/null | awk -F'[/,: ]+' '{print $2}' | sort -u); do
-        if [ "$old_version" != "%{version}" ]; then
-            dkms remove -m msdisp -v "$old_version" --all >/dev/null 2>&1 || :
-            rm -rf "/usr/src/msdisp-$old_version"
-        fi
-    done
     dkms add -m msdisp -v %{version} >/dev/null 2>&1 || :
+    build_failed=0
     if rpm -q kernel-devel >/dev/null 2>&1; then
         for kver in $(rpm -q --qf '%%{VERSION}-%%{RELEASE}.%%{ARCH} ' kernel-devel); do
             echo "Building msdisp/%{version} for kernel $kver"
-            dkms install -m msdisp -v %{version} -k "$kver" --force ||
-                echo "WARNING: DKMS build failed for kernel $kver."
-            /sbin/depmod -a "$kver" || :
+            if dkms install -m msdisp -v %{version} -k "$kver" --force; then
+                /sbin/depmod -a "$kver" || :
+            else
+                echo "WARNING: DKMS build failed for kernel $kver; preserving previous driver."
+                build_failed=1
+            fi
         done
+        if [ "$build_failed" -eq 0 ]; then
+            # Retire older DKMS versions only after the new version built for
+            # every installed kernel-devel package.
+            for old_version in $(dkms status -m msdisp 2>/dev/null | awk -F'[/,: ]+' '{print $2}' | sort -u); do
+                if [ "$old_version" != "%{version}" ]; then
+                    dkms remove -m msdisp -v "$old_version" --all >/dev/null 2>&1 || :
+                    rm -rf "/usr/src/msdisp-$old_version"
+                fi
+            done
+        else
+            echo "WARNING: Previous DKMS driver versions were retained."
+        fi
     else
-        echo "WARNING: Install matching kernel-devel packages to build msdisp."
+        echo "WARNING: Install matching kernel-devel packages; previous driver versions were retained."
     fi
 fi
 /sbin/depmod -a >/dev/null 2>&1 || :
@@ -69,9 +78,13 @@ fi
 /sbin/depmod -a >/dev/null 2>&1 || :
 
 %changelog
+* Wed Nov 04 2026 Andrew Zwieg <andrew@zwiegnet.com> - 3.1.8-1
+- Preserve the previous driver unless the new DKMS build succeeds for all installed kernels.
+- Retire older DKMS versions only after successful replacement builds.
+- Improve safe upgrade behavior for existing installations.
+
 * Wed Nov 04 2026 Andrew Zwieg <andrew@zwiegnet.com> - 3.1.7-1
 - Add feature detection for DRM API backports in Enterprise Linux kernels.
-- Upgrade existing msdisp DKMS installations cleanly.
 - Build and validate the kernel-independent DKMS RPM across EL10 distributions.
 
 * Wed Nov 04 2026 Andrew Zwieg <andrew@zwiegnet.com> - 3.1.6-1
