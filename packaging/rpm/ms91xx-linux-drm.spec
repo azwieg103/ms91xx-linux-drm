@@ -27,7 +27,7 @@ release and is not a kABI-compatible, cross-kernel module package.
 
 %build
 make clean
-make -j%{?_smp_build_ncpus} KVER=%{kver} KDIR=/usr/src/kernels/%{kver}
+make -j%{?_smp_build_ncpus} KVER=%{kver} KDIR=/usr/src/kernels/%{kver} KCFLAGS=-fno-PIE
 
 %install
 rm -rf %{buildroot}
