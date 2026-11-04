@@ -90,3 +90,24 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 30
+
+  publish-release:
+    name: Publish versioned RPM release
+    needs: build-rpm
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download tested AlmaLinux RPM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ms91xx-dkms-rpm-AlmaLinux 10-${{ github.sha }}
+          path: release-assets
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: release-assets/*.rpm
