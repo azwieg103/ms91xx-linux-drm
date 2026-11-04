@@ -51,41 +51,56 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Build binary RPM and SRPM
+      - name: Validate release version
+        id: version
         shell: bash
         run: |
+          set -euo pipefail
+          VERSION="$(awk '$1 == "Version:" { print $2; exit }' packaging/rpm/ms91xx-linux-drm.spec)"
+          test -n "$VERSION"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            test "$TAG_VERSION" = "$VERSION"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building version $VERSION"
+
+      - name: Build binary RPM and SRPM
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
           set -euxo pipefail
-          VERSION=3.1.8
           TOP="$HOME/rpmbuild"
           mkdir -p "$TOP"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
           tar -czf "$TOP/SOURCES/ms91xx-linux-drm-${VERSION}.tar.gz" \
-            --transform="s,^\./,ms91xx-linux-drm-${VERSION}/," \
+            --transform="s,^\\./,ms91xx-linux-drm-${VERSION}/," \
             --exclude='./.git' .
           cp packaging/rpm/ms91xx-linux-drm.spec "$TOP/SPECS/"
-          rpmbuild -ba "$TOP/SPECS/ms91xx-linux-drm.spec" \
-            --define "_topdir $TOP"
+          rpmbuild -ba "$TOP/SPECS/ms91xx-linux-drm.spec" --define "_topdir $TOP"
           mkdir -p dist
           find "$TOP/RPMS" "$TOP/SRPMS" -type f \
             \( -name '*.rpm' -o -name '*.src.rpm' \) -exec cp -v {} dist/ \;
-          rpm -qp --info dist/ms91xx-linux-drm-dkms-*.rpm
-          rpm -qp --requires dist/ms91xx-linux-drm-dkms-*.rpm
+          rpm -qp --info dist/ms91xx-linux-drm-dkms-${VERSION}-*.rpm
+          rpm -qp --requires dist/ms91xx-linux-drm-dkms-${VERSION}-*.rpm
 
       - name: Install RPM and verify DKMS module build
         shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euxo pipefail
-          VERSION=3.1.8
           KVER="$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-devel | tail -n1)"
-          # Container runners do not boot the distro kernel, so kernel-core
-          # is absent and DKMS cannot find the normal /lib/modules build link.
           mkdir -p "/lib/modules/$KVER"
           ln -sfn "/usr/src/kernels/$KVER" "/lib/modules/$KVER/build"
-          RPM_FILE="$(find dist -maxdepth 1 -type f -name 'ms91xx-linux-drm-dkms-*.noarch.rpm' -print -quit)"
+          RPM_FILE="$(find dist -maxdepth 1 -type f -name "ms91xx-linux-drm-dkms-${VERSION}-*.noarch.rpm" -print -quit)"
           test -n "$RPM_FILE"
           dnf -y install "$RPM_FILE"
           dkms status -m msdisp -v "$VERSION"
           modinfo -k "$KVER" usbdisp_drm
           modinfo -k "$KVER" usbdisp_usb
+          modinfo -k "$KVER" -F version usbdisp_drm | grep -Fx "$VERSION"
+          modinfo -k "$KVER" -F version usbdisp_usb | grep -Fx "$VERSION"
           test -e "/lib/modules/$KVER/extra/usbdisp_drm.ko" -o -e "/lib/modules/$KVER/extra/usbdisp_drm.ko.xz"
           test -e "/lib/modules/$KVER/extra/usbdisp_usb.ko" -o -e "/lib/modules/$KVER/extra/usbdisp_usb.ko.xz"
           test -f /usr/lib/modules-load.d/msdisp.conf
@@ -94,10 +109,12 @@ jobs:
       - name: Collect DKMS diagnostics
         if: always()
         shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set +e
-          dkms status -m msdisp -v 3.1.8
-          find /var/lib/dkms/msdisp -name make.log -type f -print -exec cat {} \; 2>/dev/null
+          dkms status -m msdisp -v "$VERSION"
+          find /var/lib/dkms/msdisp -name make.log -type f -print -exec cat {} \\; 2>/dev/null
 
       - name: Upload RPM artifacts
         uses: actions/upload-artifact@v4
@@ -110,7 +127,7 @@ jobs:
   publish-release:
     name: Publish versioned RPM release
     needs: build-rpm
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -124,7 +141,7 @@ jobs:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v3.1.8' }}
+          tag_name: ${{ github.ref_name }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
           fail_on_unmatched_files: true
