@@ -40,7 +40,15 @@ install -D -m 0644 packaging/rpm/msdisp.modules-load \
 %post
 if command -v dkms >/dev/null 2>&1; then
     dkms add -m msdisp -v %{version} >/dev/null 2>&1 || :
-    dkms autoinstall || echo "WARNING: DKMS could not build msdisp for one or more installed kernels."
+    if rpm -q kernel-devel >/dev/null 2>&1; then
+        for kver in $(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}\\n' kernel-devel); do
+            echo "Building msdisp/%{version} for kernel $kver"
+            dkms install -m msdisp -v %{version} -k "$kver" --force ||
+                echo "WARNING: DKMS build failed for kernel $kver."
+        done
+    else
+        echo "WARNING: Install matching kernel-devel packages to build msdisp."
+    fi
 fi
 /sbin/depmod -a >/dev/null 2>&1 || :
 
