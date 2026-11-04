@@ -162,7 +162,7 @@ See [LICENSE](LICENSE) for the license terms included with the source. Retain ap
 
 The project ships a **kernel-independent DKMS RPM**. Unlike a precompiled,
 kernel-specific RPM, it installs the driver source under
-`/usr/src/msdisp-3.1.7` and registers it with DKMS. DKMS compiles the two
+`/usr/src/msdisp-3.1.8` and registers it with DKMS. DKMS compiles the two
 modules against each installed kernel's matching development files and can
 rebuild them when a new kernel is installed.
 
@@ -197,7 +197,7 @@ test -e "/lib/modules/$KVER/build/Makefile" || {
 From a clean checkout:
 
 ```bash
-VERSION=3.1.7
+VERSION=3.1.8
 TOP="$HOME/rpmbuild"
 mkdir -p "$TOP"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
 tar -czf "$TOP/SOURCES/ms91xx-linux-drm-$VERSION.tar.gz" \
@@ -213,7 +213,7 @@ Install the resulting DKMS RPM:
 sudo dnf install "$TOP"/RPMS/noarch/ms91xx-linux-drm-dkms-*.rpm
 ```
 
-The RPM registers `msdisp/3.1.7` with DKMS and attempts to build it for
+The RPM registers `msdisp/3.1.8` with DKMS and attempts to build it for
 installed kernels. Ensure the matching `kernel-devel` package is installed
 for every kernel you intend to boot. The RPM also installs
 `/usr/lib/modules-load.d/msdisp.conf`, which loads `usbdisp_drm` before
