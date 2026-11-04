@@ -1,0 +1,72 @@
+name: Build EL10 RPMs
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - '**'
+      - '.github/workflows/build-el10-rpm.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-rpm:
+    name: Build on ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: AlmaLinux 10
+            image: almalinux:10
+          - distro: Rocky Linux 10
+            image: rockylinux:10
+          - distro: Oracle Linux 10
+            image: oraclelinux:10
+          - distro: CentOS Stream 10
+            image: quay.io/centos/centos:stream10
+
+    steps:
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          dnf -y install dnf-plugins-core
+          dnf -y install gcc make elfutils-libelf-devel rpm-build rpmdevtools kernel-devel tar gzip findutils
+          rpm -q kernel-devel
+          rpm -q --provides kernel-devel | grep '^kernel-devel-uname-r = '
+
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Build binary RPM and SRPM
+        shell: bash
+        run: |
+          set -euxo pipefail
+          KVER="$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-devel)"
+          mkdir -p "$HOME/rpmbuild"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+          git archive --format=tar.gz --prefix="ms91xx-linux-drm-3.1.6/" HEAD \
+            > "$HOME/rpmbuild/SOURCES/ms91xx-linux-drm-3.1.6.tar.gz"
+          cp packaging/rpm/ms91xx-linux-drm.spec "$HOME/rpmbuild/SPECS/"
+          rpmbuild -ba "$HOME/rpmbuild/SPECS/ms91xx-linux-drm.spec" \
+            --define "_topdir $HOME/rpmbuild" \
+            --define "kver ${KVER}"
+          mkdir -p dist
+          find "$HOME/rpmbuild/RPMS" "$HOME/rpmbuild/SRPMS" -type f \
+            \( -name '*.rpm' -o -name '*.src.rpm' \) -exec cp -v {} dist/ \;
+          rpm -qp --info dist/*.rpm
+          rpm -qp --requires dist/*.rpm
+
+      - name: Upload RPM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ms91xx-rpm-${{ matrix.distro }}-${{ github.sha }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
