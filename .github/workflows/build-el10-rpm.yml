@@ -54,14 +54,14 @@ jobs:
           VERSION=3.1.6
           TOP="$HOME/rpmbuild"
           mkdir -p "$TOP"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
-          tar -czf "$TOP/SOURCES/ms91xx-linux-drm-${VERSION}.tar.gz" \\
-            --transform="s,^\\./,ms91xx-linux-drm-${VERSION}/," \\
+          tar -czf "$TOP/SOURCES/ms91xx-linux-drm-${VERSION}.tar.gz" \
+            --transform="s,^\./,ms91xx-linux-drm-${VERSION}/," \
             --exclude='./.git' .
           cp packaging/rpm/ms91xx-linux-drm.spec "$TOP/SPECS/"
-          rpmbuild -ba "$TOP/SPECS/ms91xx-linux-drm.spec" \\
+          rpmbuild -ba "$TOP/SPECS/ms91xx-linux-drm.spec" \
             --define "_topdir $TOP"
           mkdir -p dist
-          find "$TOP/RPMS" "$TOP/SRPMS" -type f \\
+          find "$TOP/RPMS" "$TOP/SRPMS" -type f \
             \( -name '*.rpm' -o -name '*.src.rpm' \) -exec cp -v {} dist/ \;
           rpm -qp --info dist/ms91xx-linux-drm-dkms-*.rpm
           rpm -qp --requires dist/ms91xx-linux-drm-dkms-*.rpm
