@@ -87,6 +87,14 @@ jobs:
           test -f /usr/lib/modules-load.d/msdisp.conf
           cat /usr/lib/modules-load.d/msdisp.conf
 
+      - name: Collect DKMS diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          dkms status -m msdisp -v 3.1.6
+          find /var/lib/dkms/msdisp -name make.log -type f -print -exec cat {} \; 2>/dev/null
+
       - name: Upload RPM artifacts
         uses: actions/upload-artifact@v4
         with:
