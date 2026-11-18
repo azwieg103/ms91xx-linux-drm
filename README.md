@@ -39,7 +39,7 @@ The source includes compatibility and lifecycle fixes for modern kernels. The DK
 
 - Corrected the embedded module version metadata so both modules report 3.1.9.
 - Updated the DKMS package version to 3.1.9.
-- Made the RPM build version derive from the RPM spec, with release-tag validation.
+- Added automatic ZWIEGNET.N.el10 RPM rebuild numbering for every successful code-change release.
 - Added CI checks that verify both modules' reported versions match the package version on every EL10 build target.
 - Retained the safer RPM upgrade behavior: previous DKMS versions are not retired unless the new version builds successfully for all installed `kernel-devel` packages.
 
@@ -191,7 +191,7 @@ Recent work has addressed issues encountered while bringing the driver up on mod
 
 ## RPM versioning\n\nThe RPM package version follows the driver version in `packaging/rpm/ms91xx-linux-drm.spec`. The RPM release field uses `ZWIEGNET.N.el10`, where `N` increments for every successfully published build of the same driver version. For example, a build of driver version 3.1.9 may be named `ms91xx-linux-drm-dkms-3.1.9-ZWIEGNET.1.el10.noarch.rpm`, followed by `ZWIEGNET.2.el10`, and so on. A new driver version starts at `ZWIEGNET.1.el10`. GitHub Release tags follow the same version and rebuild identifier.\n\n## CI and release process
 
-The workflow at `.github/workflows/build-el10-rpm.yml` runs on pushes to `main`, version tags, pull requests, and manual dispatch.
+The workflow at `.github/workflows/build-el10-rpm.yml` runs on every content change pushed to `main`, pull requests, and manual dispatch. Version tags are generated automatically for successful releases; no manual tag is required.
 
 For each EL10 distribution, CI:
 
