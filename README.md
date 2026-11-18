@@ -52,7 +52,7 @@ The GitHub Actions pipeline builds and tests the RPM on all four supported EL10 
 - Oracle Linux 10
 - CentOS Stream 10
 
-Every code change pushed to `main` triggers a build. A GitHub Release is published automatically only after all four distribution jobs pass and the build is confirmed to be the latest commit on `main`. Pull-request and manual workflow runs build and test packages but do not publish releases. Download the latest RPM from the [GitHub Releases page](https://github.com/azwieg103/ms91xx-linux-drm/releases).
+Every code change pushed to `main` or `dev` triggers a build. Changes on `dev` and pull requests targeting either branch are built and tested but never publish releases. A GitHub Release is published automatically only after all four distribution jobs pass for a push to `main` and the build is confirmed to be the latest commit on `main`. The maintainer promotes approved changes from `dev` to `main`. Download the latest RPM from the [GitHub Releases page](https://github.com/azwieg103/ms91xx-linux-drm/releases).
 
 ### 1. Install prerequisites
 
@@ -189,9 +189,15 @@ Recent work has addressed issues encountered while bringing the driver up on mod
 - Added guards for sysfs callbacks and USB device driver-data access during probe and teardown.
 - Corrected the module version metadata and DKMS version tracking in 3.1.9.
 
-## RPM versioning\n\nThe RPM package version follows the driver version in `packaging/rpm/ms91xx-linux-drm.spec`. The RPM release field uses `ZWIEGNET.N.el10`, where `N` increments for every successfully published build of the same driver version. For example, a build of driver version 3.1.9 may be named `ms91xx-linux-drm-dkms-3.1.9-ZWIEGNET.1.el10.noarch.rpm`, followed by `ZWIEGNET.2.el10`, and so on. A new driver version starts at `ZWIEGNET.1.el10`. GitHub Release tags follow the same version and rebuild identifier.\n\n## CI and release process
+## RPM versioning\n\nThe RPM package version follows the driver version in `packaging/rpm/ms91xx-linux-drm.spec`. The RPM release field uses `ZWIEGNET.N.el10`, where `N` increments for every successfully published build of the same driver version. For example, a build of driver version 3.1.9 may be named `ms91xx-linux-drm-dkms-3.1.9-ZWIEGNET.1.el10.noarch.rpm`, followed by `ZWIEGNET.2.el10`, and so on. A new driver version starts at `ZWIEGNET.1.el10`. GitHub Release tags follow the same version and rebuild identifier.\n\n## Contributing
 
-The workflow at `.github/workflows/build-el10-rpm.yml` runs on every content change pushed to `main`, pull requests, and manual dispatch. Version tags are generated automatically for successful releases; no manual tag is required.
+Community contributions should be submitted as pull requests against the **`dev`** branch. Do not target `main` for feature or bug-fix contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) for the fork, testing, and pull-request process. Security issues should be reported privately as described in [SECURITY.md](SECURITY.md).
+
+Changes are tested on AlmaLinux 10, Rocky Linux 10, Oracle Linux 10, and CentOS Stream 10. A passing CI build is required but does not replace maintainer review or hardware validation. The repository maintainer promotes tested changes from `dev` to `main` and controls version tags and official releases.
+
+## CI and release process
+
+The workflow at `.github/workflows/build-el10-rpm.yml` runs on content changes pushed to `main` or `dev`, pull requests targeting either branch, and manual dispatch. Version tags are generated automatically for successful releases; no manual tag is required.
 
 For each EL10 distribution, CI:
 
@@ -202,7 +208,7 @@ For each EL10 distribution, CI:
 5. Checks that both modules report the same version as the RPM.
 6. Uploads the RPM build artifacts.
 
-Every push to `main` that changes repository content starts the RPM pipeline. The workflow builds and DKMS-tests the package on AlmaLinux 10, Rocky Linux 10, Oracle Linux 10, and CentOS Stream 10. Only when all four jobs pass, and the commit is still the latest `main` revision, does the publish job create a GitHub Release and attach the AlmaLinux 10 binary RPM and source RPM. Pull requests and manual runs validate builds without publishing. Builds are serialized so rebuild numbers cannot race.
+Every push to `main` or `dev` that changes repository content starts the RPM pipeline. Pushes to `dev` and pull requests validate builds without publishing releases. The workflow builds and DKMS-tests the package on AlmaLinux 10, Rocky Linux 10, Oracle Linux 10, and CentOS Stream 10. Only when all four jobs pass, and the commit is still the latest `main` revision, does the publish job create a GitHub Release and attach the AlmaLinux 10 binary RPM and source RPM. Pull requests and manual runs validate builds without publishing. Builds are serialized so rebuild numbers cannot race.
 
 ## Known observations and limitations
 
