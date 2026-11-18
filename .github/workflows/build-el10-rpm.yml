@@ -2,12 +2,12 @@ name: Build and Publish Enterprise Linux 10 DKMS RPMs
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - '**'
       - '.github/workflows/build-el10-rpm.yml'
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 
 permissions:
