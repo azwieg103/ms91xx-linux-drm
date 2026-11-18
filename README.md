@@ -52,7 +52,7 @@ The GitHub Actions pipeline builds and tests the RPM on all four supported EL10 
 - Oracle Linux 10
 - CentOS Stream 10
 
-A tagged release is published only after all four distribution jobs pass. Download the **3.1.9** RPM from the [GitHub Releases page](https://github.com/azwieg103/ms91xx-linux-drm/releases). Do not use an older release if you specifically need the 3.1.9 fixes.
+Every code change pushed to `main` triggers a build. A GitHub Release is published automatically only after all four distribution jobs pass and the build is confirmed to be the latest commit on `main`. Pull-request and manual workflow runs build and test packages but do not publish releases. Download the latest RPM from the [GitHub Releases page](https://github.com/azwieg103/ms91xx-linux-drm/releases).
 
 ### 1. Install prerequisites
 
@@ -75,14 +75,14 @@ test -e "/lib/modules/$KVER/build/Makefile" || {
 
 ### 2. Install the release RPM
 
-Download the 3.1.9 binary RPM from the release assets at:
+Download the latest 3.1.9 binary RPM from the release assets at:
 
 https://github.com/azwieg103/ms91xx-linux-drm/releases
 
 Then install the downloaded file (replace the filename below with the exact asset filename shown on the release page):
 
 ```bash
-sudo dnf install ./ms91xx-linux-drm-dkms-3.1.9-1.el10.noarch.rpm
+sudo dnf install ./ms91xx-linux-drm-dkms-3.1.9-ZWIEGNET.N.el10.noarch.rpm
 ```
 
 The RPM installs the driver source under `/usr/src/msdisp-3.1.9`, registers it with DKMS, builds the modules for installed kernels with matching `kernel-devel` packages, and installs:
@@ -189,7 +189,7 @@ Recent work has addressed issues encountered while bringing the driver up on mod
 - Added guards for sysfs callbacks and USB device driver-data access during probe and teardown.
 - Corrected the module version metadata and DKMS version tracking in 3.1.9.
 
-## CI and release process
+## RPM versioning\n\nThe RPM package version follows the driver version in `packaging/rpm/ms91xx-linux-drm.spec`. The RPM release field uses `ZWIEGNET.N.el10`, where `N` increments for every successfully published build of the same driver version. For example, a build of driver version 3.1.9 may be named `ms91xx-linux-drm-dkms-3.1.9-ZWIEGNET.1.el10.noarch.rpm`, followed by `ZWIEGNET.2.el10`, and so on. A new driver version starts at `ZWIEGNET.1.el10`. GitHub Release tags follow the same version and rebuild identifier.\n\n## CI and release process
 
 The workflow at `.github/workflows/build-el10-rpm.yml` runs on pushes to `main`, version tags, pull requests, and manual dispatch.
 
@@ -202,7 +202,7 @@ For each EL10 distribution, CI:
 5. Checks that both modules report the same version as the RPM.
 6. Uploads the RPM build artifacts.
 
-When a version tag such as `v3.1.9` is pushed, the workflow first runs all four distribution builds. If all pass, the release job publishes a GitHub release and attaches the tested RPM assets. A successful push-to-main build alone does not publish a release.
+Every push to `main` that changes repository content starts the RPM pipeline. The workflow builds and DKMS-tests the package on AlmaLinux 10, Rocky Linux 10, Oracle Linux 10, and CentOS Stream 10. Only when all four jobs pass, and the commit is still the latest `main` revision, does the publish job create a GitHub Release and attach the AlmaLinux 10 binary RPM and source RPM. Pull requests and manual runs validate builds without publishing. Builds are serialized so rebuild numbers cannot race.
 
 ## Known observations and limitations
 
