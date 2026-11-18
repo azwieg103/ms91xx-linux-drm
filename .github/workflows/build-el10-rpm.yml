@@ -1,9 +1,8 @@
-name: Build and test EL10 DKMS RPMs
+name: Build and Publish Enterprise Linux 10 DKMS RPMs
 
 on:
   push:
     branches: [main]
-    tags: ['v*']
     paths:
       - '**'
       - '.github/workflows/build-el10-rpm.yml'
@@ -14,14 +13,20 @@ on:
 permissions:
   contents: read
 
+# Serialize main builds so rebuild numbers cannot race. Never cancel a build
+# after it has started; the freshness check prevents stale builds publishing.
 concurrency:
   group: ms91xx-dkms-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-rpm:
     name: Build and test on ${{ matrix.distro }}
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      rpm_release: ${{ steps.version.outputs.rpm_release }}
+      is_current: ${{ steps.freshness.outputs.is_current }}
     container:
       image: ${{ matrix.image }}
     strategy:
@@ -49,26 +54,71 @@ jobs:
           test -d "/usr/src/kernels/$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-devel)"
 
       - name: Check out source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
-      - name: Validate release version
+      - name: Select RPM version and next ZWIEGNET rebuild number
         id: version
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           VERSION="$(awk '$1 == "Version:" { print $2; exit }' packaging/rpm/ms91xx-linux-drm.spec)"
           test -n "$VERSION"
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            TAG_VERSION="${GITHUB_REF_NAME#v}"
-            test "$TAG_VERSION" = "$VERSION"
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Building version $VERSION"
 
-      - name: Build binary RPM and SRPM
+          python3 - "$VERSION" <<'PY'
+          import json
+          import os
+          import re
+          import sys
+          import urllib.request
+
+          version = sys.argv[1]
+          prefix = f"ms91xx-linux-drm-{version}-ZWIEGNET."
+          token = os.environ["GH_TOKEN"]
+          repo = os.environ["GH_REPO"]
+          maximum = 0
+          page = 1
+
+          while True:
+              url = f"https://api.github.com/repos/{repo}/releases?per_page=100&page={page}"
+              request = urllib.request.Request(url, headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {token}",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              })
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  releases = json.load(response)
+              if not releases:
+                  break
+              for release in releases:
+                  tag = release.get("tag_name", "")
+                  if tag.startswith(prefix):
+                      match = re.fullmatch(r"([1-9][0-9]*)\.el10", tag[len(prefix):])
+                      if match:
+                          maximum = max(maximum, int(match.group(1)))
+              if len(releases) < 100:
+                  break
+              page += 1
+
+          rebuild = maximum + 1
+          rpm_release = f"ZWIEGNET.{rebuild}.el10"
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"version={version}\n")
+              output.write(f"rpm_release={rpm_release}\n")
+          print(f"Driver version: {version}")
+          print(f"RPM release: {rpm_release}")
+          PY
+
+      - name: Build binary RPM and source RPM
         shell: bash
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          RPM_RELEASE: ${{ steps.version.outputs.rpm_release }}
         run: |
           set -euxo pipefail
           TOP="$HOME/rpmbuild"
@@ -77,23 +127,26 @@ jobs:
             --transform="s,^\\./,ms91xx-linux-drm-${VERSION}/," \
             --exclude='./.git' .
           cp packaging/rpm/ms91xx-linux-drm.spec "$TOP/SPECS/"
-          rpmbuild -ba "$TOP/SPECS/ms91xx-linux-drm.spec" --define "_topdir $TOP"
+          rpmbuild -ba "$TOP/SPECS/ms91xx-linux-drm.spec" \
+            --define "_topdir $TOP" \
+            --define "ms91xx_release $RPM_RELEASE"
           mkdir -p dist
           find "$TOP/RPMS" "$TOP/SRPMS" -type f \
             \( -name '*.rpm' -o -name '*.src.rpm' \) -exec cp -v {} dist/ \;
-          rpm -qp --info dist/ms91xx-linux-drm-dkms-${VERSION}-*.rpm
-          rpm -qp --requires dist/ms91xx-linux-drm-dkms-${VERSION}-*.rpm
+          rpm -qp --info dist/ms91xx-linux-drm-dkms-${VERSION}-*.noarch.rpm
+          rpm -qp --requires dist/ms91xx-linux-drm-dkms-${VERSION}-*.noarch.rpm
 
       - name: Install RPM and verify DKMS module build
         shell: bash
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          RPM_RELEASE: ${{ steps.version.outputs.rpm_release }}
         run: |
           set -euxo pipefail
           KVER="$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-devel | tail -n1)"
           mkdir -p "/lib/modules/$KVER"
           ln -sfn "/usr/src/kernels/$KVER" "/lib/modules/$KVER/build"
-          RPM_FILE="$(find dist -maxdepth 1 -type f -name "ms91xx-linux-drm-dkms-${VERSION}-*.noarch.rpm" -print -quit)"
+          RPM_FILE="$(find dist -maxdepth 1 -type f -name "ms91xx-linux-drm-dkms-${VERSION}-${RPM_RELEASE}.noarch.rpm" -print -quit)"
           test -n "$RPM_FILE"
           dnf -y install "$RPM_FILE"
           dkms status -m msdisp -v "$VERSION"
@@ -117,32 +170,72 @@ jobs:
           find /var/lib/dkms/msdisp -name make.log -type f -print -exec cat {} \; 2>/dev/null
 
       - name: Upload RPM artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ms91xx-dkms-rpm-${{ matrix.distro }}-${{ github.sha }}
           path: dist/*
           if-no-files-found: error
           retention-days: 30
 
+      - name: Confirm this is still the latest main build
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: freshness
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const ref = await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: "heads/main"
+            });
+            const isCurrent = ref.data.object.sha === context.sha;
+            core.setOutput("is_current", String(isCurrent));
+            if (!isCurrent) core.info("A newer main commit exists; this build will not publish a release.");
+
   publish-release:
-    name: Publish versioned RPM release
+    name: Publish tested RPMs to GitHub Releases
     needs: build-rpm
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.build-rpm.outputs.is_current == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download tested AlmaLinux RPM artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - name: Download tested AlmaLinux 10 RPM artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ms91xx-dkms-rpm-AlmaLinux 10-${{ github.sha }}
           path: release-assets
 
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          target_commitish: ${{ github.sha }}
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          files: release-assets/*.rpm
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          RPM_VERSION: ${{ needs.build-rpm.outputs.version }}
+          RPM_RELEASE: ${{ needs.build-rpm.outputs.rpm_release }}
+        run: |
+          set -euo pipefail
+          tag="ms91xx-linux-drm-${RPM_VERSION}-${RPM_RELEASE}"
+          title="MS91xx Linux DRM ${RPM_VERSION} (${RPM_RELEASE})"
+          notes=$(cat <<'EOF'
+          Rebuilt MacroSilicon MS9133 USB display driver DKMS packages for Enterprise Linux 10 (x86_64), intended for AlmaLinux 10, Red Hat Enterprise Linux 10, Oracle Linux 10, Rocky Linux 10, and CentOS Stream 10.
+
+          The package contains the driver source and registers it with DKMS to build against installed and future kernels with matching kernel-devel packages.
+
+          RPM versioning follows the driver version. The ZWIEGNET rebuild number increments for every successfully published code change of the same driver version, using the release format ZWIEGNET.N.el10.
+
+          The binary RPM and source RPM are built and DKMS-tested across all four EL10 CI environments before publication. The attached binary RPM is the AlmaLinux 10 x86_64 build; the package is noarch and kernel-independent.
+
+          This is experimental kernel software. Packages are supplied as-is, with no warranty or support. Hardware, kernel, Secure Boot, and desktop compatibility are not guaranteed.
+          EOF
+          )
+          if gh release view "$tag" --repo "$GH_REPO" >/dev/null 2>&1; then
+            echo "Release $tag already exists; refusing to overwrite published artifacts."
+            exit 1
+          fi
+          gh release create "$tag" release-assets/*.rpm \
+            --repo "$GH_REPO" \
+            --target "$GITHUB_SHA" \
+            --title "$title" \
+            --notes "$notes" \
+            --latest
